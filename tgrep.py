@@ -55,6 +55,7 @@ README.
     - datetime's millisecs or year - avoided
     - doesn't reimplement the wheel for crufty stuff, like time.
     - out of order entries (challenge assured always in order)
+    - file read error
 
 Notes:
   http://docs.python.org/library/multiprocessing.html
@@ -116,9 +117,9 @@ def wide_search(log, filesize, times, num_procs):
   guess_results   = Queue()
   nearest_guesses = [Guess(0,        datetime(1999, 1, 1, 00, 00, 00),  Guess.TOO_LOW,  Guess.TOO_LOW),  # //! make y1k safe
                      Guess(filesize, datetime.now().replace(year=3000), Guess.TOO_HIGH, Guess.TOO_HIGH)] # //! make y3k safe
-  nearest_guesses = [[0,        datetime(1999, 1, 1, 00, 00, 00), [-1, -1]], # //! make y1k safe
-                     [filesize, datetime.now().replace(year=3000), [1, 1]]]  # //! make y3k safe
-  prev_focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
+  prev_focus, seek_guesses = binary_search_guess(nearest_guesses[0]._seek_loc, 
+                                                 nearest_guesses[1]._seek_loc, 
+                                                 num_procs)
   hits  = []
   found = False
   while not found:
@@ -131,16 +132,18 @@ def wide_search(log, filesize, times, num_procs):
       child.join() # wait for all procs to finish before calculating next step
     while not guess_results.empty():
       guess = guess_results.get()
-      if guess[2][0] == 0 or guess[2][1] == 0:
+      if Guess.MATCH in guess.get_minmax():
         print "found it!" # //!
         hits.append(guess)
         found = True
         break
-#      print guess
+      print guess
       nearest_guesses = update_guess(guess, nearest_guesses)
-#      print nearest_guesses
+      print nearest_guesses
 #      print seek_guesses
-      focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
+      focus, seek_guesses = binary_search_guess(nearest_guesses[0]._seek_loc, 
+                                                nearest_guesses[1]._seek_loc, 
+                                                num_procs)
 #      print seek_guesses
 
       if focus == prev_focus:
@@ -196,36 +199,27 @@ def pessismistic_search(log, seek_loc, times, results, arr):
   # //! need to research a better (faster?) way to do this
   time = parse_time(' '.join(chunk[nl_index:nl_index+20].split()[:3]))
 
-  cmp_results = [time_cmp(time, times[0]),
-                 time_cmp(time, times[1])]
-
-  results.put([seek_loc, time, cmp_results])
+  result = Guess(seek_loc, time,                 # from before, no change
+                 Guess.time_cmp(time, times[0]), # how it compares, min
+                 Guess.time_cmp(time, times[1])) # how it compares, max
+  results.put(result)
 
 def parse_time(time_str):
   return datetime.strptime(time_str + str(datetime.now().year), "%b %d %H:%M:%S%Y")
 
-def time_cmp(log_time, desired):
-  # make these consts, use consts in update_guess
-  if log_time > desired:
-    return 1 # 1 means "KEEP GOING DUDE!"
-  elif log_time == desired:
-    return 0 # Aw, yeah. We're awesome.
-  else:
-    return -1 # Too far! Pull back!
-
 def update_guess(guess, nearest_guesses):
-  # guess:   [loc, datetime, [cmp_min, cmp_max]]
+  # guess:   [loc, datetime, cmp_min, cmp_max]
   # nearest: [min_guess, max_guess]
 
-  if guess[2][0] == -1: # not far enough
+  if guess._relation_to_desired_min == Guess.TOO_LOW: # not far enough
     # Compare with min, replace if bigger
-    if guess[0] > nearest_guesses[0][0]:
-      nearest_guesses[0][0:3] = guess
+    if guess._seek_loc > nearest_guesses[0]._seek_loc:
+      nearest_guesses[0] = guess
 
-  if guess[2][1] == 1: # too far
+  if guess._relation_to_desired_max == Guess.TOO_HIGH: # too far
     # Compare with max, replace if smaller
-    if guess[0] < nearest_guesses[1][0]:
-      nearest_guesses[1][0:3] = guess
+    if guess._seek_loc < nearest_guesses[1]._seek_loc:
+      nearest_guesses[1] = guess
 
   return nearest_guesses
 
