@@ -26,15 +26,27 @@ grep //!
 Make sure to verify input.
 
 Comment shit.
+PyDoc func comments.
+
+Make sure it works on >4 GB files. Mostly the seek func. Python natively supports big ints.
 
 README.
   O(log2). Other analysis. Number of children. Speed.
   http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
+  Tested on OS X 10.6.y in Python 2.6.z
+  Tested on raldi's generated log, my generated log, and a >4 GB file
+
+Notes:
+  http://docs.python.org/library/multiprocessing.html
+  http://docs.python.org/library/queue.html#Queue.Queue
+  http://docs.python.org/library/os.html
+  http://docs.python.org/release/2.4.4/lib/bltin-file-objects.html
 """
 
 # Python imports
 import os
 from multiprocessing import Process, Queue
+from datetime import datetime
 
 # local imports
 
@@ -61,10 +73,24 @@ def doShit2(path_to_log):
       children.append(p)
     for child in children:
       child.join()
+      print guess_times.get()
     
 def workerBee(file, seek_loc, guess_times):
   file.seek(seek_loc)
-  print [seek_loc, file.read(2)]
+  guess_times.put([seek_loc, file.read(2)]) # read more
+
+def time_cmp(time_str, desired):
+  log_time = datetime.strptime(time_str + str(datetime.now().year), "%b %d %H:%M:%S%Y")
+  print "log: ", 
+  print log_time
+  print "desired: ",
+  print desired
+  if log_time > desired:
+    return 1 # 1 means "KEEP GOING DUDE!"
+  elif log_time == desired:
+    return 0 # Aw, yeah. We're awesome.
+  else:
+    return -1 # Too far! Pull back!
 
 def doShit(path_to_log):
   children = []
@@ -100,7 +126,17 @@ def doShit(path_to_log):
 
 
 if __name__ == '__main__':
-  doShit2(DEFAULT_LOG) # //! change this...
+  now = datetime.today() # today() instead of now() to lose TZ info
+  now.replace(microsecond=0)
+  # get min and max via min=now and replace()
+  min = datetime(2011, 2, 1, 13, 34, 43)
+  print time_cmp("Feb  9 14:34:43", min)
+  min = datetime(2011, 2, 9, 14, 34, 43)
+  print time_cmp("Feb  9 14:34:43", min)
+  min = datetime(2011, 2, 9, 15, 34, 43)
+  print time_cmp("Feb  9 14:34:43", min)
+
+#  doShit2(DEFAULT_LOG) # //! change this...
 
   # parse input
   # figure out which file to open
