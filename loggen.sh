@@ -4,6 +4,7 @@
 #MAX_LOGS=10
 
 MAX_SEC_APART=5
+MIN_SAME_LOG=200
 MAX_SAME_LOG=1500
 INITIAL_TIMESTAMP=1234567890
 END_TIMESTAMP=0
@@ -35,7 +36,7 @@ timestamp=$INITIAL_TIMESTAMP
 #done
 
 while [ $timestamp -lt $END_TIMESTAMP ]; do
-  logline `rand 1 $MAX_SAME_LOG` $timestamp
+  logline `rand $MIN_SAME_LOG $MAX_SAME_LOG` $timestamp
   ((timestamp = timestamp + `rand 0 $MAX_SEC_APART`))
 done
 

@@ -25,6 +25,8 @@ grep //!
 
 Make sure to verify input.
 
+check beginning/end of file matches
+
 Comment shit.
 PyDoc func comments.
 
@@ -35,6 +37,8 @@ Make sure it works on >4 GB files. Mostly the seek func. Python natively support
 Use classes instead of arrays and shit? Which is faster?
 
 option to turn on seek/read output
+
+x results @ y bytes each in memory is z MB
 
 README.
   O(log2). Other analysis. Number of children. Speed.
@@ -76,63 +80,83 @@ DEFAULT_LOG = "loggen.log" # //! "/log/haproxy.log"
 times_seeked = 0
 times_read   = 0
 
-def doShit2(path_to_log):
+def tgrep(path_to_log):
   # whine if log file doesn't exists
   if not os.path.isfile(path_to_log):
     print "file '%s' does not exist" % path_to_log
     return
   # //! better place to whine?
 
+  filesize = os.path.getsize(path_to_log)
+
+  # //! only here temp.
+  # Feb 13 23:33 (whole minute)
+  times = [datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]
+
+  # for single vs multi, just bump guesses down to 1.
+  num_children = 1
+  with open(path_to_log, 'r') as log:
+    wide_search(log, filesize, times, num_children)
+    
+def wide_search(log, filesize, times, num_procs):
   # for the global counters...
   global times_seeked
   global times_read
   arr = Array('i', [times_seeked, times_read])
 
-  filesize = os.path.getsize(path_to_log)
-
-  # //! only here temp.
-  # Feb 13 23:33 (whole minute)
-  times = [datetime(2011, 2, 13, 23, 33, 30), datetime(2011, 2, 13, 23, 34, 00)]
-
-  # for single vs multi, just bump guesses down to 1.
-  # filesize/2+-x%
-  seek_guesses    = [filesize/2]#[0,376*9000 + 50,376*5000 + 50,376*3000 + 50]
   guess_results   = Queue()
   nearest_guesses = [[0,        datetime(1999, 1, 1, 00, 00, 00)],  # //! make y1k safe
                      [filesize, datetime.now().replace(year=3000)]] # //! make y3k safe
+  prev_focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
+  focus = -1
   children = []
-  with open(path_to_log, 'r') as log:
-    for i in range(15):
-      for seek_loc in seek_guesses:
-        p = Process(target=pessismistic_search, args=(log, seek_loc, times, guess_results, arr))
-        p.start()
-        children.append(p)
-      for child in children:
-        child.join() # wait for all procs to finish before calculating next step
-      while not guess_results.empty():
-        guess = guess_results.get()
-        if guess[2][0] == 0 or guess[2][1] == 0:
-          print "found it!"
-          times_seeked = arr[0]
-          times_read   = arr[1]
-          return
-        print guess
-        nearest_guesses = update_guess(guess, nearest_guesses)
-#        print nearest_guesses
-#        print seek_guesses
-        seek_guesses = [binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0])]
-        print seek_guesses
-        # update seek_guesses, loop
-        # check for zeros, go to opmistic_search?
+  found = False
+  while not found:
+    for seek_loc in seek_guesses:
+      p = Process(target=pessismistic_search, args=(log, seek_loc, times, guess_results, arr))
+      p.start()
+      children.append(p)
+    for child in children:
+      child.join() # wait for all procs to finish before calculating next step
+    while not guess_results.empty():
+      guess = guess_results.get()
+      if guess[2][0] == 0 or guess[2][1] == 0:
+        print "found it!"
+        found = True
+        break
+      print guess
+      nearest_guesses = update_guess(guess, nearest_guesses)
+#      print nearest_guesses
+#      print seek_guesses
+      focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
+      print seek_guesses
 
+      if focus == prev_focus:
+        print "steady state!"
+        found = True
+        break
+      prev_focus = focus
+      # check for zeros, go to opmistic_search?
+  
   times_seeked = arr[0]
   times_read   = arr[1]
-    
-def binary_search_guess(min, max):
-  # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
-  return ((max - min) / 2) + min
+  #return something hungry_edge_search can use
 
-def time_bimary_search_guess(nearest_guesses, desired):
+def binary_search_guess(min, max, num_guesses):
+  # //! require odd number! num_guesses % 2 != 0
+  # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
+  focus = ((max - min) / 2) + min
+  guesses = [focus]
+  OFFSET = 0.1 # //! do smarter. No checking over 100% right now.
+  curr_offset = OFFSET
+  for i in range(1, num_guesses, 2): # skip 0 because we already added the focus
+    guesses.append(int(focus*(1-curr_offset)))
+    guesses.append(int(focus*(1+curr_offset)))
+    curr_offset+=OFFSET
+  return focus, guesses
+
+def time_bimary_search_guess(nearest_guesses, desired, num_guesses):
+  # //! require odd number! num_guesses % 2 != 0
   # //! implement!
   pass
 
@@ -191,37 +215,7 @@ def update_guess(guess, nearest_guesses):
   return nearest_guesses
 
 
-#def doShit(path_to_log):
-#  children = []
-#
-#  # whine if log file doesn't exists
-#  if not os.path.isfile(path_to_log):
-#    print "file '%s' does not exist" % path_to_log
-#
-#  # //! state assumptions
-#  seek_guesses = [0,0,0]
-#  seek_g2 = []
-#
-#  with open(path_to_log, 'r') as log: 
-##    log.seek(SEEK_BYTES)
-#    for seek_loc in seek_guesses:
-#      pid = os.fork()
-#      if pid is not 0: # this is the parent 
-#        children.append(pid)
-#      else: # these are the children
-#        log.seek(0)
-#        chunk = log.read(2)
-##       chunk = log.read(MORE_THAN_ONE_LINE)
-#        print chunk
-#        chunk = log.read(2)
-#        print chunk
-#        # find next date, compare
-#        seek_g2.append(42)
-#        os._exit(0)
-#  
-#    for child in children:
-#      os.waitpid(child, 0)
-#
+
 
 
 if __name__ == '__main__':
@@ -231,7 +225,7 @@ if __name__ == '__main__':
 #  min = datetime(2011, 2, 1, 13, 34, 43)
 #  print time_cmp("Feb  9 14:34:43", min)
 
-  doShit2(DEFAULT_LOG) # //! change this...
+  tgrep(DEFAULT_LOG) # //! change this...
 
   # parse input
   # figure out which file to open
