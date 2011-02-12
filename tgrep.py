@@ -54,6 +54,7 @@ README.
     - fragile on date format
     - datetime's millisecs or year - avoided
     - doesn't reimplement the wheel for crufty stuff, like time.
+    - out of order entries (challenge assured always in order)
 
 Notes:
   http://docs.python.org/library/multiprocessing.html
@@ -68,10 +69,11 @@ from multiprocessing import Process, Queue, Array
 from datetime import datetime
 
 # local imports
-
+from guess import Guess
 
 # constants
 MORE_THAN_ONE_LINE = 500 # bytes
+MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB
 SEEK_BYTES = 376*9000 + 50
 
 DEFAULT_LOG = "loggen.log" # //! "/log/haproxy.log" 
@@ -97,21 +99,30 @@ def tgrep(path_to_log):
   num_children = 1
   with open(path_to_log, 'r') as log:
     wide_search(log, filesize, times, num_children)
+
+    # if (min_loc + max_loc) > MAX_MMAP_SIZE:
+    #   mmap whole thing
+    # else:
+    #   hungry_search # finds edges, keeps matches, mmaps blocks 
     
 def wide_search(log, filesize, times, num_procs):
+  # binary search, with friends!
+
   # for the global counters...
   global times_seeked
   global times_read
   arr = Array('i', [times_seeked, times_read])
 
   guess_results   = Queue()
-  nearest_guesses = [[0,        datetime(1999, 1, 1, 00, 00, 00)],  # //! make y1k safe
-                     [filesize, datetime.now().replace(year=3000)]] # //! make y3k safe
+  nearest_guesses = [Guess(0,        datetime(1999, 1, 1, 00, 00, 00),  Guess.TOO_LOW,  Guess.TOO_LOW),  # //! make y1k safe
+                     Guess(filesize, datetime.now().replace(year=3000), Guess.TOO_HIGH, Guess.TOO_HIGH)] # //! make y3k safe
+  nearest_guesses = [[0,        datetime(1999, 1, 1, 00, 00, 00), [-1, -1]], # //! make y1k safe
+                     [filesize, datetime.now().replace(year=3000), [1, 1]]]  # //! make y3k safe
   prev_focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
-  focus = -1
-  children = []
+  hits  = []
   found = False
   while not found:
+    children = []
     for seek_loc in seek_guesses:
       p = Process(target=pessismistic_search, args=(log, seek_loc, times, guess_results, arr))
       p.start()
@@ -121,26 +132,30 @@ def wide_search(log, filesize, times, num_procs):
     while not guess_results.empty():
       guess = guess_results.get()
       if guess[2][0] == 0 or guess[2][1] == 0:
-        print "found it!"
+        print "found it!" # //!
+        hits.append(guess)
         found = True
         break
-      print guess
+#      print guess
       nearest_guesses = update_guess(guess, nearest_guesses)
 #      print nearest_guesses
 #      print seek_guesses
       focus, seek_guesses = binary_search_guess(nearest_guesses[0][0], nearest_guesses[1][0], num_procs)
-      print seek_guesses
+#      print seek_guesses
 
       if focus == prev_focus:
-        print "steady state!"
+        print "steady state!" # //!
         found = True
         break
       prev_focus = focus
       # check for zeros, go to opmistic_search?
   
+  print hits
+  print nearest_guesses
   times_seeked = arr[0]
   times_read   = arr[1]
-  #return something hungry_edge_search can use
+
+  return hits, nearest_guesses
 
 def binary_search_guess(min, max, num_guesses):
   # //! require odd number! num_guesses % 2 != 0
@@ -155,7 +170,7 @@ def binary_search_guess(min, max, num_guesses):
     curr_offset+=OFFSET
   return focus, guesses
 
-def time_bimary_search_guess(nearest_guesses, desired, num_guesses):
+def time_search_guess(nearest_guesses, desired, num_guesses):
   # //! require odd number! num_guesses % 2 != 0
   # //! implement!
   pass
@@ -200,17 +215,17 @@ def time_cmp(log_time, desired):
 
 def update_guess(guess, nearest_guesses):
   # guess:   [loc, datetime, [cmp_min, cmp_max]]
-  # nearest: [[loc, datetime], [loc, datetime]]
+  # nearest: [min_guess, max_guess]
 
   if guess[2][0] == -1: # not far enough
     # Compare with min, replace if bigger
     if guess[0] > nearest_guesses[0][0]:
-      nearest_guesses[0][0:2] = guess[:2]
+      nearest_guesses[0][0:3] = guess
 
   if guess[2][1] == 1: # too far
     # Compare with max, replace if smaller
     if guess[0] < nearest_guesses[1][0]:
-      nearest_guesses[1][0:2] = guess[:2]
+      nearest_guesses[1][0:3] = guess
 
   return nearest_guesses
 
