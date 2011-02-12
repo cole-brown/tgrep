@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.6
 
 #MORE_THAN_ONE_LINE = 500 # bytes
 #SEEK_BYTES = 376*9000 + 50
