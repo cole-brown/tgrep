@@ -1,0 +1,1 @@
+while [ 0 -lt 1 ]; do sleep 2; ls -lh | grep biglog.log | awk '{ printf $5; printf "     \r" }'; done;
