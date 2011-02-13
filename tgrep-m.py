@@ -72,8 +72,6 @@ README.
     - file read error
     - assumes filelines are < ~950 bytes
     - reading beginning and end of file
-    - only one log entry
-    - no log entry
 
 Notes:
   http://docs.python.org/library/multiprocessing.html
@@ -134,18 +132,18 @@ def tgrep(path_to_log):
   # //! only here temp.
   # Feb 13 23:33 (whole minute)
   times = [datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]
-  # Feb 13 23:33:11 (one log line)
-  times = [datetime(2011, 2, 13, 23, 33, 11), datetime(2011, 2, 13, 23, 33, 11)]
   print "desired: %s" % str(times[0])
   print "desired: %s" % str(times[1])
 
+  # for single vs multi, just bump guesses down to 1.
+  num_children = 1
   end   = None
   start = datetime.now()
   with open(path_to_log, 'r') as log:
     print "first: %s" % str(first_timestamp(log))
     print "\n\nwide sweep"
     sweep_start = datetime.now()
-    hits, nearest_guesses = wide_sweep(log, filesize, times)
+    hits, nearest_guesses = wide_sweep(log, filesize, times, num_children)
     sweep_end = datetime.now()
     stats['wide_sweep_time'] = sweep_end - sweep_start
     print "\n\nedge sweep"
@@ -203,10 +201,10 @@ def edge_sweep(log, hits, nearest_guesses, times):
     global stats
     stats['edge_sweep_loops'] += 1
     children = []
+    print "ng size: %d" % len(nearest_guesses)
     for near_guess in nearest_guesses:
       if near_guess.get_is_boundry():
         continue # It's already been found. Continue to the other.
-      print "ng: %s" % near_guess
       optimistic_edge_search(log, near_guess, times, results)
     for result in results:
       # //! need to check guess error state
@@ -239,56 +237,81 @@ def edge_sweep(log, hits, nearest_guesses, times):
 #----------------------------------------------------------------------------------------------------------------------
 # wide_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
-def wide_sweep(log, filesize, times):
+def wide_sweep(log, filesize, times, num_procs):
   # binary search, with friends!
 
-  # start min guess way too low, and max guess way too high. Just to prime the pump.
-  nearest_guesses = [LogLocation(0,        datetime.min,  LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
-                     LogLocation(filesize, datetime.max, LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
-  focus = -1
+  # for the global counters...
+  global stats
+  arr = Array('i', [stats['seeks'], stats['reads']])
+
+  results         = Queue()
+  nearest_guesses = [LogLocation(0,        datetime(1999, 1, 1, 00, 00, 00),  LogLocation.TOO_LOW,  LogLocation.TOO_LOW),  # //! make y1k safe
+                     LogLocation(filesize, datetime.now().replace(year=3000), LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)] # //! make y3k safe
+  prev_focus, seek_guesses = binary_search_guess(nearest_guesses[0]._seek_loc, 
+                                                 nearest_guesses[1]._seek_loc, 
+                                                 num_procs)
   hits  = []
   found = False
   # //! binary search until focal point of search is same
   while not found:
-    global stats
     stats['wide_sweep_loops'] += 1
-    prev_focus = focus # which will be -1 the first time
-    focus = binary_search_guess(nearest_guesses[0]._seek_loc, 
-                                nearest_guesses[1]._seek_loc)
-    result = pessismistic_binary_search(log, focus, times)
-    # //! need to check error state
-    if LogLocation.MATCH in result.get_minmax():
-      print "found it!" # //!
-      hits.append(result)
-      found = True
-#    print result
-    update_guess(result, nearest_guesses) # updates nearest_guesses in place
-#    print nearest_guesses
+    children = []
+    for seek_loc in seek_guesses:
+      p = Process(target=pessismistic_binary_search, args=(log, seek_loc, times, results, arr))
+      p.start()
+      children.append(p)
+    for child in children:
+      child.join() # wait for all procs to finish before calculating next step
+    focus = -1
+    while not results.empty():
+      result = results.get()
+      # //! need to check guess error state
+      if LogLocation.MATCH in result.get_minmax():
+        print "found it!" # //!
+        hits.append(result)
+        found = True
+#      print result
+      update_guess(result, nearest_guesses) # updates nearest_guesses in place
+#      print nearest_guesses
 #    print seek_guesses
+    focus, seek_guesses = binary_search_guess(nearest_guesses[0]._seek_loc, 
+                                              nearest_guesses[1]._seek_loc, 
+                                              num_procs)
 #    print seek_guesses
 
     if focus == prev_focus:
       print "steady state!" # //!
       found = True
-      break # //! don't need breaks
+      break
     elif (nearest_guesses[1]._seek_loc - nearest_guesses[0]._seek_loc) < WIDE_SWEEP_CLOSE_ENOUGH:
       print "close enough!" # //!
       found = True
-      break # //! don't need breaks
+      break
+    prev_focus = focus
   
   print hits
   print nearest_guesses
   print (nearest_guesses[1]._seek_loc - nearest_guesses[0]._seek_loc, nearest_guesses[0]._seek_loc, nearest_guesses[1]._seek_loc)
+  stats['seeks'] = arr[0]
+  stats['reads'] = arr[1]
 
   return hits, nearest_guesses
 
 #----------------------------------------------------------------------------------------------------------------------
 # binary_search_guess: 
 #----------------------------------------------------------------------------------------------------------------------
-def binary_search_guess(min, max):
+def binary_search_guess(min, max, num_guesses):
+  # //! require odd number! num_guesses % 2 != 0
   # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
   focus = ((max - min) / 2) + min
-  return focus
+  guesses = [focus]
+  OFFSET = 0.1 # //! do smarter. No checking over 100% right now.
+  curr_offset = OFFSET
+  for i in range(1, num_guesses, 2): # skip 0 because we already added the focus
+    guesses.append(int(focus*(1-curr_offset)))
+    guesses.append(int(focus*(1+curr_offset)))
+    curr_offset+=OFFSET
+  return focus, guesses
 
 #----------------------------------------------------------------------------------------------------------------------
 # time_search_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
@@ -316,18 +339,18 @@ def first_timestamp(log):
 #----------------------------------------------------------------------------------------------------------------------
 # pessismistic_binary_search
 #----------------------------------------------------------------------------------------------------------------------
-def pessismistic_binary_search(log, seek_loc, times):
+def pessismistic_binary_search(log, seek_loc, times, results, arr):
   """Reads only a little and checks only the first timestamp. Better when it's way off base."""
-  global stats
   log.seek(seek_loc)
-  stats['seeks'] += 1
+  arr[0] += 1
   chunk = log.read(MORE_THAN_ONE_LINE)
-  stats['reads'] += 1
+  arr[1] += 1
 
   # find the nearest newline so we can find the timestamp
   nl_index = chunk.find("\n")
   if nl_index == -1:
-    return None
+    results.put(None)
+    return
     # //! better error case?
   nl_index += 1 # get past the newline
 
@@ -341,7 +364,7 @@ def pessismistic_binary_search(log, seek_loc, times):
   result = LogLocation(seek_loc, time,                 # from before, no change
                        logloc.time_cmp(time, times[0]), # how it compares, min
                        logloc.time_cmp(time, times[1])) # how it compares, max
-  return result
+  results.put(result)
 
 #----------------------------------------------------------------------------------------------------------------------
 # optimistic_edge_search
@@ -400,7 +423,7 @@ def optimistic_edge_search(log, guess, times, results):
         if prev_minmax[1] != LogLocation.TOO_HIGH:
           # We passed out of range. This loc is where we want to /stop/ reading. Save it!
           result.set_is_max(True)
-        print "short circuit: %s" % time
+#        print "short circuit"
         break  # Can short-circuit if find a max, since we're reading buff beginning-to-end.
       elif time == times[1]:
         # do nothing for now about data, may optimize to save off data later.
@@ -537,4 +560,3 @@ if __name__ == '__main__':
   print "edge sweep time:  %s" % str(stats['edge_sweep_time'])
   print "find  time:       %s" % str(stats['find_time'])
   print "print time:       %s" % str(stats['print_time'])
-  print "total time:       %s" % str(stats['find_time'] + stats['print_time'])
