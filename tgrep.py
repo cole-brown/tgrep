@@ -384,7 +384,7 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
 
 
 #----------------------------------------------------------------------------------------------------------------------
-# binary_search_guess: 
+# binary_search_guess
 #----------------------------------------------------------------------------------------------------------------------
 def binary_search_guess(min, max):
   """Straight up regular binary search calculation.
@@ -492,7 +492,19 @@ def pessismistic_forward_search(log, seek_loc, times):
 # optimistic_edge_search
 #----------------------------------------------------------------------------------------------------------------------
 def optimistic_edge_search(log, guess, looking_for, times, filesize):
-  """Reads a chunk and checks whole thing for timestamps. Better when it's really close."""
+  """Reads a large(r) chunk and checks it for the min or max boundry.
+
+  Inputs:
+    log         - opened log file
+    guess       - A LogLocation to start from for finding an edge.
+    looking_for - LOOKING_FOR_BOTH, LOOKING_FOR_MIN, or LOOKING_FOR_MAX
+    filesize    - size of log
+
+  Returns:
+    LogLocation - better guess, or an actual boundry
+
+  Raises: Nothing
+  """
 
   # //! make look for both min and max, since it's reading a chunk...
 
@@ -616,12 +628,36 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
 # parse_time: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
 def parse_time(time_str):
+  """Tries to parse string into a datetime object.
+
+  Inputs:
+    time_str - timestamp from log, formatted like: "Feb 13 18:31:36"
+
+  Returns:
+    datetime - datetime representation of time_str
+
+  Raises:
+    ValueError - error parsing string into datetime
+  """
   return datetime.strptime(time_str + str(datetime.now().year), "%b %d %H:%M:%S%Y")
 
 #----------------------------------------------------------------------------------------------------------------------
 # update_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
 def update_guess(guess, nearest_guesses):
+  """Updates the nearest_guesses list based on the guess.
+
+  Inputs:
+    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+    guess           - A LogLocation that may or may not be better than the current guesses.
+
+  Updates in place:
+    nearest_guesses
+
+  Returns: Nothing
+
+  Raises:  Nothing
+  """
   # guess:   ~[loc, datetime, cmp_min, cmp_max] (LogLocation)
   # nearest:  [min_guess, max_guess]
 
@@ -646,6 +682,17 @@ def update_guess(guess, nearest_guesses):
 # expected_size: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
 def expected_size(min_time, max_time):
+  """Calculates the expected size of a region in the log based on the supplied times and config params.
+
+  Inputs:
+    min_time - smaller datetime 
+    max_time - bigger  datetime 
+
+  Returns:
+    int - expected number of bytes that amount of time would fill in the log assuming max load
+
+  Raises:  Nothing
+  """
   # //! Use me somewhere! :(
   time_range = max_time - min_time
   seconds = time_range.days * 3600 * 24 + time_range.seconds # We're ignoring microseconds.
@@ -657,6 +704,16 @@ def expected_size(min_time, max_time):
 # print_log_lines: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
 def print_log_lines(log, bounds):
+  """Prints to stdout the range of the log indicated by bounds.
+
+  Inputs:
+    log    - opened log file
+    bounds - List in form [min, max] of the bounds of LogLocation entries
+
+  Returns: Nothing
+
+  Raises:  Nothing
+  """
   global stats
 
   start_loc = bounds[0]._seek_loc
@@ -684,20 +741,19 @@ def print_log_lines(log, bounds):
 
 
 
-
+#----------------------------------------------------------------------------------------------------------------------
+#                                                    The Main Event
+#----------------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
-  now = datetime.today() # today() instead of now() to lose TZ info
-  now.replace(microsecond=0)
-  # get min and max via min=now and replace()
-#  min = datetime(2011, 2, 1, 13, 34, 43)
-#  print time_cmp("Feb  9 14:34:43", min)
-
-  tgrep([None, None], DEFAULT_LOG) # //! change this...
-
   # parse input
   # figure out which file to open
   # figure out the time range
   # don't care about arg order
+
+  # grep the file
+  tgrep([None, None], DEFAULT_LOG) # //! change this...
+
+  # print statistics
   print "\n\n -- statistics --"
   print "seeks: %8d" % stats['seeks']
   print "reads: %8d" % stats['reads']
