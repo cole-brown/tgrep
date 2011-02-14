@@ -31,13 +31,13 @@ class LogLocation:
   def __repr__(self):
     """print to repl"""
     return "[%d, %s, %d, %d, %s, %s]" % (self._seek_loc, str(self._timestamp), \
-                                         self._relation_to_desired_min, self._relation_to_desired_min, \
+                                         self._relation_to_desired_min, self._relation_to_desired_max, \
                                          self._is_min_boundry, self._is_max_boundry)
 
   def __str__(self):
     """stringify"""
     return "[%d, %s, %d, %d, %s, %s]" % (self._seek_loc, str(self._timestamp), \
-                                         self._relation_to_desired_min, self._relation_to_desired_min, \
+                                         self._relation_to_desired_min, self._relation_to_desired_max, \
                                          self._is_min_boundry, self._is_max_boundry)
 
   def get_minmax(self):
