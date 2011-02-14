@@ -42,20 +42,22 @@ We usually get about 1500 log lines per second at peak and about 500 per second 
 todo = """
 grep //!
 
-better I/O type notes in function docstrings?
-
-go to three spaces?
-
 Make sure to verify input.
-
-Comment shit.
-PyDoc func comments.
 
 Make sure it works on >4 GB files. Mostly the seek func. Python natively supports big ints.
 
-Use classes instead of arrays and shit? Which is faster?
+Classify the functions in here.
+  LogSearch
+    tgrep (time grep)
+    bgrep (binary grep)
+    attributes:
+      log
+      path_to_log
+      times
+      guesses
+      filesize
 
-option to turn on seek/read output
+option to turn on/off statistics printing
 
 x results @ y bytes each in memory is z MB
 
@@ -69,8 +71,7 @@ turn off prints, debugs
 remove "# DEBUG"
 
 README.
-  O(log2). Other analysis. Number of children. Speed.
-  http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
+  O(log2). Other analysis. Speed. "Hot" vs "cold" cache. Estimated speed on 70 GB file.
   Developed and tested on OS X 10.6.6 in Python 2.6.1
   Tested on raldi's generated log, my generated log, and a >4 GB file
   speed at cost of a few extra seek/reads
@@ -96,6 +97,7 @@ Notes:
   http://docs.python.org/library/queue.html#Queue.Queue
   http://docs.python.org/library/os.html
   http://docs.python.org/release/2.4.4/lib/bltin-file-objects.html
+  http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
 """
 
 
@@ -263,9 +265,10 @@ def wide_sweep(log, filesize, times):
     filesize        - size of log
     times           - Should be a list of size two with the min and max datetimes. Format: [min, max]
 
-  Returns: (hits, nearest_guesses) tuple
-    hits            - any exact matches from previous search methods (LogLocation)
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+  Returns: 
+    (LogLocation, [LogLocation, LogLocation]) tuple
+      LogLocation - any exact matches from previous search methods
+      list        - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
 
   Raises: Nothing
   """
@@ -404,7 +407,7 @@ def binary_search_guess(min, max):
     max - high seek location (int) to use in calculation
 
   Returns:
-    focus - point in file to seek to next search (int)
+    int - point in file to seek to next search
 
   Raises: Nothing
   """
@@ -425,7 +428,7 @@ def time_search_guess(nearest_guesses, desired):
     desired         - datetime we're looking for in the log
 
   Returns:
-    focus - point in file to seek to next search (int)
+    int - point in file to seek to next search
 
   Raises: Nothing
   """
