@@ -28,9 +28,11 @@ __status__     = "Prototype" # "Prototype", "Development", or "Production" //! d
 import os
 from datetime import datetime
 import unittest
+import StringIO
 
 # local imports
 import tgrep
+from logloc import LogLocation
 
 
 
@@ -79,9 +81,27 @@ class TgrepTestCase(unittest.TestCase):
     # Really... it's a simple calculation. Based on config params. Can't test it without reimplemnting it.
     pass
 
+  def test_prn(self):
+    global expected_log0
+    log_entries = StringIO.StringIO()
 
+    # [[1508000, 2011-02-13 23:33:11, 0, 0, True, False], [1508377, 2011-02-13 23:33:15, 1, 1, False, True]]
+    min = LogLocation(1508000, datetime(datetime.now().year,  2, 13, 23, 33, 11),
+                      LogLocation.TOO_LOW,
+                      LogLocation.TOO_LOW)
+    min.set_is_min(True)
+    max = LogLocation(1508377, datetime(datetime.now().year,  2, 13, 23, 33, 15),
+                      LogLocation.TOO_HIGH,
+                      LogLocation.TOO_HIGH)
+    max.set_is_min(True)
+    bounds = [min, max]
+    tgrep.print_log_lines(self.log_file, bounds, log_entries)
+    self.assertEquals(expected_log0, log_entries.getvalue())
 
+    log_entries.close()
 
+expected_log0="""Feb 13 23:33:11 web03 haproxy[1631]: 10.350.42.161:58625 [10/Feb/2011:10:59:49.089] frontend pool3/srv28-5020 0/138/0/19/160 200 488 - - ---- 332/332/13/0/0 0/15 {Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2.7) Gecko/20100713 Firefox/3.6.7|www.reddit.com|http://www.reddit.com/r/pics/?count=75&after=t3_fiic6|201.8.487.192|17.86.820.117|} "POST /api/vote HTTP/1.1"
+"""
 
 #----------------------------------------------------------------------------------------------------------------------
 #                                                    The Main Event

@@ -112,6 +112,7 @@ Notes:
 
 # Python imports
 import os
+import sys
 from datetime import datetime
 
 # local imports
@@ -730,12 +731,13 @@ def expected_size(min_time, max_time):
 #----------------------------------------------------------------------------------------------------------------------
 # print_log_lines: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
-def print_log_lines(log, bounds):
+def print_log_lines(log, bounds, writable=sys.stdout):
   """Prints to stdout the range of the log indicated by bounds.
 
   Inputs:
-    log    - opened log file
-    bounds - List in form [min, max] of the bounds of LogLocation entries
+    log      - opened log file
+    bounds   - List in form [min, max] of the bounds of LogLocation entries
+    writable - writable object to print output to
 
   Returns: Nothing
 
@@ -764,9 +766,9 @@ def print_log_lines(log, bounds):
     curr += chunk_size
   
     stats['print_reads'] += 1
-    print chunk # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
+    print >>writable, chunk, # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
     print (chunk_size, end_loc - start_loc) # DEBUG
-    print (start_loc, curr, end_loc) # DEBUg
+    print (start_loc, curr, end_loc) # DEBUG
 
 
 
