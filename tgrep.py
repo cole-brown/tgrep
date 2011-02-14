@@ -3,6 +3,8 @@
 
 """tgrep: grep HAproxy logs by timestamp, assuming logs are fully sorted
 
+//! describe algorithm a bit maybe...
+
 Usage: 
   //!
 
@@ -14,9 +16,9 @@ Usage:
 
 __author__     = "Cole Brown (spydez)"
 __copyright__  = "Copyright 2011"
-__credits__    = ["Cole Brown", "The reddit Backend Challenge (http://redd.it/fjgit)"]
-__license__    = "BSD"
-__version__    = "1.0.1" # //! what version of BSD?
+__credits__    = ["The reddit Backend Challenge (http://redd.it/fjgit)", "Cole Brown"]
+__license__    = "BSD-3"
+__version__    = "0.0.4" # //!
 __maintainer__ = "Cole Brown"
 __email__      = "git@spydez.com"
 __status__     = "Prototype" # "Prototype", "Development", or "Production" //! development?
@@ -40,6 +42,13 @@ We usually get about 1500 log lines per second at peak and about 500 per second 
 """
 
 todo = """
+Rename folder FAST. Fucking Alacritous (Something) Tgrep. ...yeah. I'm not NASA.
+Move scripts to /scripts
+
+Move version string somewhere common. All header shit somewhere common?
+
+README.mk
+
 grep //!
 
 Make sure to verify input.
@@ -285,8 +294,8 @@ def wide_sweep(log, filesize, times):
     global stats
     stats['wide_sweep_loops'] += 1
     prev_focus = focus # which will be -1 the first time
-    focus = binary_search_guess(nearest_guesses[0]._seek_loc, 
-                                nearest_guesses[1]._seek_loc)
+    focus = binary_search_guess(nearest_guesses[0].get_loc(), 
+                                nearest_guesses[1].get_loc())
     result = pessismistic_forward_search(log, focus, times) # check focus for timestamp
     # //! need to check error state
     if LogLocation.MATCH in result.get_minmax():
@@ -302,13 +311,13 @@ def wide_sweep(log, filesize, times):
     if focus == prev_focus:
       print "steady state!" # DEBUG
       done = True
-    elif (nearest_guesses[1]._seek_loc - nearest_guesses[0]._seek_loc) < WIDE_SWEEP_CLOSE_ENOUGH:
+    elif (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) < WIDE_SWEEP_CLOSE_ENOUGH:
       print "close enough!" # DEBUG
       done = True
   
   print hits # DEBUG
   print nearest_guesses # DEBUG
-  print (nearest_guesses[1]._seek_loc - nearest_guesses[0]._seek_loc, nearest_guesses[0]._seek_loc, nearest_guesses[1]._seek_loc) # DEBUG
+  print (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc(), nearest_guesses[0].get_loc(), nearest_guesses[1].get_loc()) # DEBUG
 
   return hits, nearest_guesses
 
@@ -337,8 +346,8 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
   """
   # Find the extenses of the range. Range could still be fucking gigabytes!
 
-  expected = expected_size(nearest_guesses[0]._timestamp, nearest_guesses[1]._timestamp)
-  current  = nearest_guesses[1]._seek_loc - nearest_guesses[0]._seek_loc
+  expected = expected_size(nearest_guesses[0].get_time(), nearest_guesses[1].get_time())
+  current  = nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()
 
   if current > expected * EDGE_SWEEP_PESSIMISM_FACTOR: # //! move this to wide sweep
     # Well, fuck. wide_sweep did a shitty job.
@@ -376,11 +385,11 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
       print result  # DEBUG
       update_guess(result, nearest_guesses) # updates nearest_guesses in place
       if result.get_is_min():
-#        print "found min! %s" % result._timestamp # DEBUG
+#        print "found min! %s" % result.get_time() # DEBUG
         # Found the lower boundry. Switch to looking for upper or neither, depending.
         looking_for = LOOKING_FOR_MAX if looking_for == LOOKING_FOR_BOTH else LOOKING_FOR_NEITHER
       elif result.get_is_max():
-#        print "found max! %s" % result._timestamp # DEBUG
+#        print "found max! %s" % result.get_time() # DEBUG
         # Found the upper boundry. Switch to looking for lower or neither, depending.
         looking_for = LOOKING_FOR_MIN if looking_for == LOOKING_FOR_BOTH else LOOKING_FOR_NEITHER
 
@@ -455,11 +464,8 @@ def first_timestamp(log):
   global stats
   stats['reads'] += 1
 
-  # split it on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
-  # join the first three back together again with ' ' as the seperator
-  # parse the thing!
-  # //! need to research a better (faster?) way to do this
-  return parse_time(' '.join(chunk.split()[:LOG_TIMESTAMP_PARTS]))
+  # get the datetime
+  return parse_time(chunk)
 
 #----------------------------------------------------------------------------------------------------------------------
 # pessismistic_forward_search
@@ -494,11 +500,8 @@ def pessismistic_forward_search(log, seek_loc, times):
   nl_index += 1 # get past the newline
 
   # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
-  # split it on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
-  # join the first three back together again with ' ' as the seperator
-  # parse the thing!
-  # //! need to research a better (faster?) way to do this
-  time = parse_time(' '.join(chunk[nl_index : nl_index + LOG_TIMESTAMP_SIZE].split()[:LOG_TIMESTAMP_PARTS]))
+  # send to parse_time to get datetime
+  time = parse_time(chunk[nl_index : nl_index + LOG_TIMESTAMP_SIZE])
 
   result = LogLocation(seek_loc, time,                  # from before (no change)
                        logloc.time_cmp(time, times[0]), # how it compares, min
@@ -538,11 +541,11 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
     print "LOOKING_FOR_MAX" # DEBUG
 
   global stats
-  seek_loc = guess._seek_loc
+  seek_loc = guess.get_loc()
   if guess.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
     # we're looking for the max and we're above it, so read from a chunk away up to here.
 #    print "looking high" # DEBUG
-#    print "%d %d" % (guess._seek_loc, guess._seek_loc - EDGE_SWEEP_CHUNK_SIZE) # DEBUG
+#    print "%d %d" % (guess.get_loc(), guess.get_loc() - EDGE_SWEEP_CHUNK_SIZE) # DEBUG
     seek_loc -= EDGE_SWEEP_CHUNK_SIZE
     seek_loc = 0 if seek_loc < 0 else seek_loc
     log.seek(seek_loc)
@@ -566,33 +569,30 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
 #    print "%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc) # DEBUG
     try:
       # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
-      # split it on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
-      # join the first three back together again with ' ' as the seperator
-      # parse the thing!
-      # //! need to research a better (faster?) way to do this
-      time = parse_time(' '.join(chunk[chunk_loc : chunk_loc + LOG_TIMESTAMP_SIZE].split()[:LOG_TIMESTAMP_PARTS]))
+      # send to parse_time to get datetime
+      time = parse_time(chunk[chunk_loc : chunk_loc + LOG_TIMESTAMP_SIZE])
 
       # start building result
-      result._seek_loc  = seek_loc + chunk_loc
-      result._timestamp = time
+      result.set_loc(seek_loc + chunk_loc)
+      result.set_time(time)
 
       # compare to desired to see if it's a better max
       if time > times[1]:
         result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
       elif time == times[1]:
         # do nothing for now about this match, may optimize to save it off later.
-        result._relation_to_desired_max = LogLocation.MATCH
+        result.set_rel_to_max(LogLocation.MATCH)
       else: # time < times[1]
-        result._relation_to_desired_max = LogLocation.TOO_LOW
+        result.set_rel_to_max(LogLocation.TOO_LOW)
  
       # compare to desired to see if it's a better min
       if time < times[0]:
-        result._relation_to_desired_min = LogLocation.TOO_LOW
+        result.set_rel_to_min(LogLocation.TOO_LOW)
       elif time == times[0]:
         # do nothing for now about this match, may optimize to save it off later.
-        result._relation_to_desired_min = LogLocation.MATCH
+        result.set_rel_to_min(LogLocation.MATCH)
       else: # time > times[0]
-        result._relation_to_desired_min = LogLocation.TOO_HIGH
+        result.set_rel_to_min(LogLocation.TOO_HIGH)
 
       # We jumped entirely over the range in one line. There is no spoon.
       if (prev_minmax == LogLocation.OUT_OF_RANGE_LOW) and (result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH):
@@ -602,13 +602,13 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
 
       # see if the result's a min or max bondry
       if (looking_for == LOOKING_FOR_MIN) or (looking_for == LOOKING_FOR_BOTH):
-        if (prev_minmax[0] == LogLocation.TOO_LOW) and (result._relation_to_desired_min != LogLocation.TOO_LOW):
+        if (prev_minmax[0] == LogLocation.TOO_LOW) and (result.get_rel_to_min() != LogLocation.TOO_LOW):
           # We passed into our range via min. This is one.
           result.set_is_min(True)
           break
       elif (looking_for == LOOKING_FOR_MAX) or (looking_for == LOOKING_FOR_BOTH):
         # check to see if it's the edge
-        if (prev_minmax[1] != LogLocation.TOO_HIGH) and (result._relation_to_desired_max == LogLocation.TOO_HIGH):
+        if (prev_minmax[1] != LogLocation.TOO_HIGH) and (result.get_rel_to_max() == LogLocation.TOO_HIGH):
           # We passed out of range. This loc is where we want to /stop/ reading. Save it!
           result.set_is_max(True)
           break
@@ -637,8 +637,8 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
   # if we read a chunk at the end of the file, searched through that, and didn't come up with a min or max,
   # set the max to eof
   if not result.get_is_boundry() and at_eof and ((looking_for == LOOKING_FOR_MAX) or (looking_for == LOOKING_FOR_BOTH)):
-    result._seek_loc  = seek_loc + len(chunk)
-    result._timestamp = times[1] # //! functionize these fuckers?
+    result.set_loc(seek_loc + len(chunk))
+    result.set_time(times[1])
     result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
     result.set_is_max(True)
 #  print "short circuit: %s" % time # DEBUG
@@ -661,9 +661,14 @@ def parse_time(time_str):
   Raises:
     ValueError - error parsing string into datetime
   """
+  # split the string on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
+  # join the first three back together again with ' ' as the seperator
+  # parse the thing!
+  # //! need to research a better (faster?) way to do this
+  just_timestamp = ' '.join(time_str.split()[:LOG_TIMESTAMP_PARTS])
 
   # parse with the illustrious strptime
-  return datetime.strptime(time_str + str(datetime.now().year), "%b %d %H:%M:%S%Y")
+  return datetime.strptime(just_timestamp + str(datetime.now().year), "%b %d %H:%M:%S%Y")
 
 #----------------------------------------------------------------------------------------------------------------------
 # update_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
@@ -689,14 +694,14 @@ def update_guess(guess, nearest_guesses):
   elif guess.get_is_max() == True: # set to max 'guess' if it's the Real Actual max boundry
     nearest_guesses[1] = guess
 
-  elif guess._relation_to_desired_min == LogLocation.TOO_LOW: # not far enough
+  elif guess.get_rel_to_min() == LogLocation.TOO_LOW: # not far enough
     # Compare with min, replace if bigger
-    if guess._seek_loc > nearest_guesses[0]._seek_loc:
+    if guess.get_loc() > nearest_guesses[0].get_loc():
       nearest_guesses[0] = guess
 
-  elif guess._relation_to_desired_max == LogLocation.TOO_HIGH: # too far
+  elif guess.get_rel_to_max() == LogLocation.TOO_HIGH: # too far
     # Compare with max, replace if smaller
-    if guess._seek_loc < nearest_guesses[1]._seek_loc:
+    if guess.get_loc() < nearest_guesses[1].get_loc():
       nearest_guesses[1] = guess
 
 
@@ -738,11 +743,11 @@ def print_log_lines(log, bounds):
   """
   global stats
 
-  start_loc = bounds[0]._seek_loc
+  start_loc = bounds[0].get_loc()
   log.seek(start_loc)
   stats['seeks'] += 1
 
-  end_loc = bounds[1]._seek_loc
+  end_loc = bounds[1].get_loc()
 
   # Print out the logs in question in chunks, so that we don't use too much memory.
   curr = start_loc
