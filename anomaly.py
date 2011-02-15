@@ -16,3 +16,36 @@ class NotFound(Exception):
 
     def __str__(self):
         return "%s\ntimes: %s\nguesses: %s" % (self.msg, self.times, self.guesses)
+
+class NotTime(Exception):
+    """Exception raised when a string sent to arg_time_parse is not a time or time range.
+
+    Attributes:
+        msg     - explanation of the error.
+        input   - string passed in
+    """
+
+    def __init__(self, msg, input):
+        self.msg = msg
+        self.input = input
+
+    def __str__(self):
+        return "%s\ninput string: %s" % (self.msg, self.input)
+
+class RegexError(Exception):
+    """Exception raised when something's wrong with a regex.
+
+    Attributes:
+        msg     - explanation of the error
+        regex   - regex string
+        input   - string regex was working on
+    """
+
+    def __init__(self, msg, regex, input):
+        self.msg = msg
+        self.regex = regex
+        self.input = input
+
+    def __str__(self):
+        return "%s\ninput string: %s\nregex string: 5s" % (self.msg, self.input, self.regex)
+

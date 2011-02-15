@@ -45,6 +45,20 @@ class LogLocation:
     self._is_min_boundry = False
     self._is_max_boundry = False
 
+  def __eq__(self, other):
+    # for easier unit testing...
+    try:
+      if self._file_loc == other._file_loc:
+        if self._timestamp == other._timestamp:
+          if self._relation_to_desired_min == other._relation_to_desired_min:
+            if self._relation_to_desired_max == other._relation_to_desired_max:
+              if self._is_min_boundry == other._is_min_boundry:
+                if self._is_max_boundry == other._is_max_boundry:
+                  return True
+      return False
+    except Exception:
+      return False
+
   def __repr__(self):
     """print to repl"""
     return "[%d, %s, %d, %d, %s, %s]" % (self._file_loc, str(self._timestamp), \

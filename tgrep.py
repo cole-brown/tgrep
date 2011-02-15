@@ -79,48 +79,81 @@ Better config? Like... hierarchical? Dunno. tgrep_config.py as a name? "config" 
 turn off prints, debugs
 remove "# DEBUG"
 
+how do I tell this morning's 6 AM from tomorrow's?!
+
+check to see what happens when file does not end with newline
+
+
 README.
   O(log2). Other analysis. Speed. "Hot" vs "cold" cache. Estimated speed on 70 GB file.
   Developed and tested on OS X 10.6.6 in Python 2.6.1
   Tested on raldi's generated log, my generated log, and a >4 GB file
   speed at cost of a few extra seek/reads
   Assumes flat/linear layout of log. No traffic bumps or dips.
+  -v option
+  expanded acceptable time inputs
   edge cases:
     - handles leap years
     - handles leap seconds
     - big files
-    - fragile on date format
+    - fragile on date format in log
+    - slightly better than requested on time format in argv
     - datetime's millisecs or year - avoided
     - doesn't reimplement the wheel for crufty stuff, like time.
     - out of order entries (challenge assured always in order)
     - file read error
     - assumes filelines are < ~950 bytes
-    - reading beginning and end of file
+    - reading beginning and end of file (works)
     - only one log entry (works)
     - very large log entry section (probably works)
     - no log entry (works)
-    - file does not end with newline
+    - file does not end with newline (works?)
+    - how do I tell this morning's 6 AM from tomorrow's?!
 
 Notes:
+  http://gskinner.com/RegExr/    # REGEX!
   http://docs.python.org/library/multiprocessing.html
   http://docs.python.org/library/queue.html#Queue.Queue
   http://docs.python.org/library/os.html
   http://docs.python.org/release/2.4.4/lib/bltin-file-objects.html
   http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
+  http://effbot.org/zone/wide-finder.htm#a-multi-threaded-python-solution
 """
 
 
 # Python imports
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # local imports
 import logloc
 from logloc import LogLocation
-from anomaly import NotFound
+from anomaly import NotFound, NotTime, RegexError
+from optparse import OptionParser
+import re
 
 # CONSTANTS //! purge unused first, then move to config.py
+
+# The only required arg is time
+REQUIRED_NUM_ARGS = 1
+
+# This is the regex for the acceptable input format for times. Don't fuck it up.
+# Good:
+#   1:2:3
+#   22:33
+#   23:33:11
+#   23:33-23:33
+#   23:33:1-23:33:1
+#   23:33:11-23:33:11
+#
+# Bad:
+#   23:33:-23:33
+#   23:33-23:33:
+#   23:33:-23:33:
+#   22:33:44:1
+# TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})-?((?:\d{1,2}:){1,2}\d{1,2})?$' # old and busted
+TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$' # new hotness
 
 # Maximum size in bytes of mmap-able region.
 MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here
@@ -217,7 +250,7 @@ def tgrep(times, path_to_log):
 #  times = [datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 31, 30)]
   # Feb 13 18:31:30 (Start of File, chunk)
 #  times = [datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]
-  # Feb 13 18:31:30 (Start of File, chunk, no exact matches)
+  # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
 #  times = [datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]
   print "desired: %s" % str(times[0]) # DEBUG
   print "desired: %s" % str(times[1]) # DEBUG
@@ -504,7 +537,7 @@ def pessismistic_forward_search(log, seek_loc, times):
   # send to parse_time to get datetime
   time = parse_time(chunk[nl_index : nl_index + LOG_TIMESTAMP_SIZE])
 
-  result = LogLocation(seek_loc, time,                  # from before (no change)
+  result = LogLocation(seek_loc + nl_index, time,
                        logloc.time_cmp(time, times[0]), # how it compares, min
                        logloc.time_cmp(time, times[1])) # how it compares, max
   return result
@@ -766,33 +799,131 @@ def print_log_lines(log, bounds, writable=sys.stdout):
     curr += chunk_size
   
     stats['print_reads'] += 1
-    print >>writable, chunk, # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
-    print (chunk_size, end_loc - start_loc) # DEBUG
-    print (start_loc, curr, end_loc) # DEBUG
+    writable.write(chunk) # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
+#    print (chunk_size, end_loc - start_loc) # DEBUG
+#    print (start_loc, curr, end_loc) # DEBUG
+
+#----------------------------------------------------------------------------------------------------------------------
+# arg_time_parse: Parses time from command line args
+#----------------------------------------------------------------------------------------------------------------------
+def arg_time_parse(input, first_time):
+  """Parses time from command line args
+
+  For a specific time, "8:42:04", only that time will be used
+  For a seconds-lacking time, "10:01", that entire minute will be used ("10:01:00" to "10:01:59")
+  For a specific range, "1:2:3-14:15:16", that specific range will be used.
+  For a seconds-lacking range end, "59" will be the seconds. 
+    ("10:01:01-10:04" -> "10:01:01-10:04:59")
+    ("10:01-10:04"    -> "10:01:00-10:04:59")
+
+  Inputs:
+    input      - arg from the command line that might be a time or time range
+    first_time - datetime of first timestamp in the log file
+
+  Returns: 
+    list - [min time, max time] (if one specific time was requested, min and max will be the same)
+
+  Raises:  Nothing
+    //! Will raise NotTime and RegexBug...
+  """
+  time_regex = re.compile(TIME_REGEX, re.IGNORECASE) 
+  times = time_regex.findall(input) # returns [(group1, group2)] for my regex
+  if times == []:
+    # Raise the alarm! No regex match!
+#    print "NO MATCH!" # DEBUG
+    raise NotTime("This is not in the right format. No regex match.", input)
+  elif 0 < times[0] < 3:
+    # Something's wrong with the regex. Only supposed to get 1 or 2 matches.
+#    print "REGEX BUG!" # DEBUG
+    raise RegexBug("Something went wrong with the regex.", TIME_REGEX, input)
+  retval = []
+  lacking_secs = False
+  for time in times[0]:
+    if time == '':
+      continue # they only passed in one time, not a range
+    lacking_secs = False # when have 2 times, don't care if first lacks seconds
+    arr  = time.split(':')
+    #//! We'll have to roll back the day to whatever the log starts with, + 1 if it's "before" the log starts
+    # (and thus actually the next day). Use timedelta to get around new year's and such.
+    # No, wait. Use first_time. Then replace h:m:s, then roll back if needed.
+    if len(arr) == 2: # no seconds
+      arr.append(0)
+      lacking_secs = True
+    t = first_time.replace(hour=int(arr[0]), minute=int(arr[1]), second=int(arr[2]), microsecond=0)
+    if t < first_time: 
+      # log file spans ~24 hrs, but probably there's the midnight crossing in there somewhere, so a time of 3:00 could
+      # be tomorrow at 3 AM. When we replaced the time, if it is actually a 'tomomrrow' date, it would put us beneath
+      # today's date.
+      t = t + timedelta(days=1)
+    retval.append(t)
+  
+  # if only one time was specified, stick a second one in to round out the [min, max] list.
+  if len(retval) == 1:
+    retval.append(retval[0])
+
+  # if no seconds were requested, they want a range of a minute, so append one with 59 secs
+  if lacking_secs:
+    retval[1] = retval[1].replace(second=int(59))
+
+  print retval # DEBUG
+  return retval
 
 
 
+usage = """\
+Usage: times
+   Or: times [file]
+   Or: times [options] [file]
+   Or: [options] times [file]
+   Or: [options] [file] times
+   ...I don't really care; do whatever you want. Just gimme my times.
+
+Example:
+   $ %prog 8:42:04
+     [log lines with that precise timestamp]
+   $ %prog 10:01
+     [log lines with timestamps between 10:01:00 and 10:01:59]
+   $ %prog 23:59-0:03
+     [log lines between 23:59:00 and 0:03:59]
+   $ %prog 23:59:30-0:03:01
+     [log lines between 23:59:30 and 0:03:01"""
 #----------------------------------------------------------------------------------------------------------------------
 #                                                    The Main Event
 #----------------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
+  # Setup arg parser
+  parser = OptionParser(usage = usage)
+  parser.add_option("-v", "--verbose",
+                    action="store_true", dest="verbose", default=False,
+                    help="print out statistics at end of run")
+  
+  (options, args) = parser.parse_args()
+
+  if len(args) < REQUIRED_NUM_ARGS:
+    parser.error("Missing the required 'times' argument.")
+    # exit stage right w/ help message and that string
+  
+  ###
+  # tgrep actually starts here...
+  ###
+  # grep the file
+  tgrep([None, None], DEFAULT_LOG) # //! change this..., just pass in args
+  #//! Make sure we're doing all this
   # parse input
   # figure out which file to open
   # figure out the time range
   # don't care about arg order
 
-  # grep the file
-  tgrep([None, None], DEFAULT_LOG) # //! change this...
-
   # print statistics
-  print "\n\n -- statistics --"
-  print "seeks: %8d" % stats['seeks']
-  print "reads: %8d" % stats['reads']
-  print "print reads: %2d" % stats['print_reads']
-  print "wide sweep loops: %3d" % stats['wide_sweep_loops']
-  print "edge sweep loops: %3d" % stats['edge_sweep_loops']
-  print "wide sweep time:  %s" % str(stats['wide_sweep_time'])
-  print "edge sweep time:  %s" % str(stats['edge_sweep_time'])
-  print "find  time:       %s" % str(stats['find_time'])
-  print "print time:       %s" % str(stats['print_time'])
-  print "total time:       %s" % str(stats['find_time'] + stats['print_time'])
+  if options.verbose:
+    print "\n\n -- statistics --"
+    print "seeks: %8d" % stats['seeks']
+    print "reads: %8d" % stats['reads']
+    print "print reads: %2d" % stats['print_reads']
+    print "wide sweep loops: %3d" % stats['wide_sweep_loops']
+    print "edge sweep loops: %3d" % stats['edge_sweep_loops']
+    print "wide sweep time:  %s" % str(stats['wide_sweep_time'])
+    print "edge sweep time:  %s" % str(stats['edge_sweep_time'])
+    print "find  time:       %s" % str(stats['find_time'])
+    print "print time:       %s" % str(stats['print_time'])
+    print "total time:       %s" % str(stats['find_time'] + stats['print_time'])
