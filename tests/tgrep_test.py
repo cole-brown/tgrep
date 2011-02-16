@@ -135,6 +135,7 @@ class TgrepTestCase(unittest.TestCase):
     bounds = [min, max]
     tgrep.print_log_lines(self.mlog_file, bounds, self.log_entries)
     self.assertEquals(expected_log2, self.log_entries.getvalue())
+#    self.assertRaises(ValueError, tgrep.parse_time, time_str="Feb 29 18:31:30") # day
 
   def test_prn_m_3(self):
     global expected_log3

@@ -51,8 +51,6 @@ README.mk
 
 grep //!
 
-Make sure to verify input.
-
 Make sure it works on >4 GB files. Mostly the seek func. Python natively supports big ints.
 
 Classify the functions in here.
@@ -65,8 +63,6 @@ Classify the functions in here.
       times
       guesses
       filesize
-
-option to turn on/off statistics printing
 
 x results @ y bytes each in memory is z MB
 
@@ -83,9 +79,15 @@ how do I tell this morning's 6 AM from tomorrow's?!
 
 check to see what happens when file does not end with newline
 
+Another time-based binary search that accounts for peak/valley times? 1500 lines peak, 500 valley, says jedburg...
+
 
 README.
   O(log2). Other analysis. Speed. "Hot" vs "cold" cache. Estimated speed on 70 GB file.
+    worst case:
+      O(log2(N)*M) -> N=bytes binary searched, M=bytes edge searched (M is minimal)
+    best case:
+      right now same as worst
   Developed and tested on OS X 10.6.6 in Python 2.6.1
   Tested on raldi's generated log, my generated log, and a >4 GB file
   speed at cost of a few extra seek/reads
@@ -95,12 +97,15 @@ README.
   edge cases:
     - handles leap years
     - handles leap seconds
+    - passing back and forth over year or month or day boundries
+    - doesn't reimplement the wheel for crufty stuff, like time.
     - big files
     - fragile on date format in log
     - slightly better than requested on time format in argv
     - datetime's millisecs or year - avoided
-    - doesn't reimplement the wheel for crufty stuff, like time.
     - out of order entries (challenge assured always in order)
+      - out of order log lines at the beginning will be caught, but out of order at the end will be missed.
+        - we'll still print the offending out-of-order lines that sneak into the range
     - file read error
     - assumes filelines are < ~950 bytes
     - reading beginning and end of file (works)
@@ -109,6 +114,12 @@ README.
     - no log entry (works)
     - file does not end with newline (works?)
     - how do I tell this morning's 6 AM from tomorrow's?!
+    - file named like time (eg 4:26:30-4:27 == log file)
+      - (can happen on some OSes. Not Windows. Don't think Linux? But yes on OS X and yes on VxWorks)
+    - How file ends was unspecified. I'm assuming a log entry and then either exactly one newline or exactly zero
+      newlines
+    - How file begins was unspecified. I'm assuming it starts directly off with a log entry.
+      newlines
 
 Notes:
   http://gskinner.com/RegExr/    # REGEX!
@@ -125,68 +136,20 @@ Notes:
 import os
 import sys
 from datetime import datetime, timedelta
+from optparse import OptionParser
+import re
+import imp
 
 # local imports
 import logloc
 from logloc import LogLocation
 from anomaly import NotFound, NotTime, RegexError
-from optparse import OptionParser
-import re
 
 # CONSTANTS //! purge unused first, then move to config.py
 
 # The only required arg is time
-REQUIRED_NUM_ARGS = 1
-
-# This is the regex for the acceptable input format for times. Don't fuck it up.
-# Good:
-#   1:2:3
-#   22:33
-#   23:33:11
-#   23:33-23:33
-#   23:33:1-23:33:1
-#   23:33:11-23:33:11
-#
-# Bad:
-#   23:33:-23:33
-#   23:33-23:33:
-#   23:33:-23:33:
-#   22:33:44:1
-# TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})-?((?:\d{1,2}:){1,2}\d{1,2})?$' # old and busted
-TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$' # new hotness
-
-# Maximum size in bytes of mmap-able region.
-MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here
-
-# Used to estimate where in the log file a particular timestamp is.
-APPROX_LOG_SIZE = 500 # bytes //! use to calc MORE_THAN_ONE_LINE
-APPROX_MAX_LOGS_PER_SEC = 5 # //!1500
-LOGS_PER_SEC_FUDGE_FACTOR = 1.2
-
-# Must be more than the max log line by the length of the timestamp. Used in initial binary time-based search for
-# reading chunks of the file. Must be more than one line so it can find a newline and find the timestamp after it.
-MORE_THAN_ONE_LINE = APPROX_LOG_SIZE * 3 # bytes
-
-# The initial binary time-based search will quit once it's either this close (in bytes) or stabalized.
-WIDE_SWEEP_CLOSE_ENOUGH = 2048 # bytes. //! bump this up 2k is small.
-
-# Amount (in bytes) of the file that the edge-finding algorithm will read in at a time. Higher /might/ give better
-# speed but will also use more memory.
-EDGE_SWEEP_CHUNK_SIZE = 2048 # bytes //! bump this up! 2k is small...
-EDGE_SWEEP_PESSIMISM_FACTOR = 3 # curr * this > expected? Then we act all sad.
-
-# Amount (in bytes) of the file that will be read and printed at a time. Higher should give better speed but
-# will use more meory.
-MAX_PRINT_CHUNK_SIZE = 2048 # bytes //! bump this up 2k is small...
-
-# The size of the timestamp in bytes. "Feb 13 18:31:36" is 15 bytes for ASCII. Bump this up if you're modifying
-# this to work with unicode. You're allowed to go over without penalty (except file read time); don't go under.
-LOG_TIMESTAMP_SIZE = 20 # bytes
-LOG_TIMESTAMP_PARTS = 3 # "Feb", "13", "18:31:36"
-
-# Path to log to default to if none is specified on the command line.
-DEFAULT_LOG = "loggen.log" # //! "/log/haproxy.log" 
-
+MIN_NUM_ARGS = 1
+MAX_NUM_ARGS = 2 # time and file path
 
 # //! constants than need moving somewhere else
 LOOKING_FOR_MIN     = 0
@@ -195,40 +158,41 @@ LOOKING_FOR_BOTH    = 2
 LOOKING_FOR_NEITHER = 3
 
 # God Damn Global Variables, cursed to eternal shame
-stats = {
-  'seeks' : 0,
-  'reads' : 0,
-  'print_reads' : 0,
-  'wide_sweep_loops' : 0,
-  'edge_sweep_loops' : 0,
-  'wide_sweep_time'  : None,
-  'edge_sweep_time'  : None,
-  'find_time'  : None,
-  'print_time' : None
-}
+#stats = {
+#  'seeks' : 0,
+#  'reads' : 0,
+#  'print_reads' : 0,
+#  'wide_sweep_loops' : 0,
+#  'edge_sweep_loops' : 0,
+#  'wide_sweep_time'  : None,
+#  'edge_sweep_time'  : None,
+#  'find_time'  : None,
+#  'print_time' : None
+#}
+
 
 
 #----------------------------------------------------------------------------------------------------------------------
 # tgrep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
-def tgrep(times, path_to_log):
+def tgrep(arg_time_str, path_to_log, search_type):
   """Searches the log file for entries in the range of the datetimes in the times list.
 
   Inputs:
-    times       - Should be a list of size two with the min and max datetimes. Format: [min, max]
-    path_to_log - The path to the log file.
+    arg_time_str - validated to at least have a colon in it...
+    path_to_log  - validated to be the path to an existing file.
 
   Returns: Nothing
 
   Raises:  Nothing
-  """
-  # verify inputs //!
 
-  # whine if log file doesn't exists
-  if not os.path.isfile(path_to_log):
-    print "file '%s' does not exist" % path_to_log
-    return
-  # //! better place to whine?
+  Prints:  Logs
+  """
+  # //! move after file's open and first_timestamp's been called
+#  # parse supplied times into datetime list
+#  times = arg_time_parse(arg_time_str, first_time)
+#  print "arg times:"
+#  print times
 
   filesize = os.path.getsize(path_to_log)
 
@@ -252,6 +216,8 @@ def tgrep(times, path_to_log):
 #  times = [datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]
   # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
 #  times = [datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]
+  # Feb 13 18:31:30 (before Start of File)
+#  times = [datetime(2011, 2, 13, 4, 31, 30), datetime(2011, 2, 13, 17, 31, 30)]
   print "desired: %s" % str(times[0]) # DEBUG
   print "desired: %s" % str(times[1]) # DEBUG
 
@@ -259,28 +225,30 @@ def tgrep(times, path_to_log):
   start = datetime.now() # DEBUG?
   # open 'rb' to avoid a bug in file.tell() in windows when file has unix line endings, even though I can't test in
   # windows, and have nyo idea if the rest will work there.
-  global stats
+  # //! open and file-related funcs throw IOError. also catch stuff my funcs throw
   with open(path_to_log, 'rb') as log: 
     print "first: %s" % str(first_timestamp(log)) # DEBUG
+    print "last:  %s" % str(last_timestamp(log)) # DEBUG
+    # //! use first and last timestamp to set the high and low in times list
 
     # Jump around the file in binary time-based fashion first
     print "\n\nwide sweep" # DEBUG
     sweep_start = datetime.now() # DEBUG?
-    hits, nearest_guesses = wide_sweep(log, filesize, times)
+    hits, nearest_guesses = wide_sweep(log, filesize, times, search_type)
     sweep_end = datetime.now() # DEBUG?
-    stats['wide_sweep_time'] = sweep_end - sweep_start # DEBUG?
+    stats.wide_sweep_time = sweep_end - sweep_start # DEBUG?
 
     # Now that we're close, find the edges of the desired region of the log in linear fashion
     print "\n\nedge sweep" # DEBUG
     sweep_start = datetime.now() # DEBUG?
     edge_sweep(log, hits, nearest_guesses, filesize, times) # updates nearest_guesses, so no return
     sweep_end = datetime.now() # DEBUG?
-    stats['edge_sweep_time'] = sweep_end - sweep_start # DEBUG?
+    stats.edge_sweep_time = sweep_end - sweep_start # DEBUG?
 
     # Figure out how much time searching took.
     end = datetime.now() # DEBUG?
     print "\n\n" # DEBUG
-    stats['find_time'] = end - start # DEBUG?
+    stats.find_time = end - start # DEBUG?
 
     start = datetime.now() # DEBUG?
     # if (min_loc + max_loc) > MAX_MMAP_SIZE:
@@ -294,19 +262,20 @@ def tgrep(times, path_to_log):
 
     # Figure out how much time printing took.
     end = datetime.now() # DEBUG?
-    stats['print_time'] = end - start # DEBUG?
+    stats.print_time = end - start # DEBUG?
 
 
 #----------------------------------------------------------------------------------------------------------------------
 # wide_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
 #----------------------------------------------------------------------------------------------------------------------
-def wide_sweep(log, filesize, times):
+def wide_sweep(log, filesize, times, search_type):
   """Binary search of log file, with time-based adjustment, to get min/max guesses close to the range.
 
   Inputs:
-    log             - opened log file
-    filesize        - size of log
-    times           - Should be a list of size two with the min and max datetimes. Format: [min, max]
+    log         - opened log file
+    filesize    - size of log
+    times       - Should be a list of size two with the min and max datetimes. Format: [min, max]
+    search_type - True: use binary_search_guess; False: use time_search_guess
 
   Returns: 
     (LogLocation, [LogLocation, LogLocation]) tuple
@@ -316,38 +285,51 @@ def wide_sweep(log, filesize, times):
   Raises: Nothing
   """
   # binary search, with friends!
+  search_func = None
+  if search_type:
+    print "BINARY search!"
+    search_func = binary_search_guess
+  else:
+    print "TIME search!"
+    search_func = time_search_guess
 
   # start min guess way too low, and max guess way too high. Just to prime the pump.
-  nearest_guesses = [LogLocation(0,        datetime.min,  LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
-                     LogLocation(filesize, datetime.max, LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
+  nearest_guesses = [LogLocation(0,        first_timestamp(log),  LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
+                     LogLocation(filesize, last_timestamp(log),   LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
   focus = -1 # where we'll jump to for the text search
   hits  = [] # any exact matches to min or max we happen upon along the way
   done = False
   # binary time-based search until focal point comes up the same twice or we're close enough as per config param
   while not done:
-    global stats
-    stats['wide_sweep_loops'] += 1
-    prev_focus = focus # which will be -1 the first time
-    focus = binary_search_guess(nearest_guesses[0].get_loc(), 
-                                nearest_guesses[1].get_loc())
-    result = pessismistic_forward_search(log, focus, times) # check focus for timestamp
-    # //! need to check error state
-    if LogLocation.MATCH in result.get_minmax():
-      print "found it!" # DEBUG
-      hits.append(result)
-#    print result # DEBUG
-    update_guess(result, nearest_guesses) # updates nearest_guesses in place
-#    print nearest_guesses # DEBUG
-#    print seek_guesses # DEBUG
-#    print seek_guesses # DEBUG
+    for time in times:
+      stats.wide_sweep_loops += 1
+      prev_focus = focus # which will be -1 the first time
+      focus = search_func(nearest_guesses, time) # time_search_guess, probably. Maybe binary_search_guess.
 
-    # check if we can quit yet
-    if focus == prev_focus:
-      print "steady state!" # DEBUG
-      done = True
-    elif (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) < WIDE_SWEEP_CLOSE_ENOUGH:
-      print "close enough!" # DEBUG
-      done = True
+      result = pessismistic_forward_search(log, focus, times) # check focus for timestamp
+      # //! need to check error state
+      if LogLocation.MATCH in result.get_minmax():
+        print "found it!" # DEBUG
+        hits.append(result)
+#      print result # DEBUG
+      update_guess(result, nearest_guesses) # updates nearest_guesses in place
+#      print nearest_guesses # DEBUG
+#      print seek_guesses # DEBUG
+#      print seek_guesses # DEBUG
+   
+      # check if we can quit yet
+      if focus == prev_focus:
+        # //! if still way far out, 
+        # //! have search guess be 0.25 or 0.75 of guess, instead of using it exactly, to see if we can improve more.
+        # //!if too many misses, give up. (2 in a row? 4?)
+        print "steady state!" # DEBUG
+        done = True # exit while
+        break # exit for
+      elif (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
+        # //! use expected_size here instead?
+        print "close enough!" # DEBUG
+        done = True # exit while
+        break # exit for
   
   print hits # DEBUG
   print nearest_guesses # DEBUG
@@ -383,13 +365,13 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
   expected = expected_size(nearest_guesses[0].get_time(), nearest_guesses[1].get_time())
   current  = nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()
 
-  if current > expected * EDGE_SWEEP_PESSIMISM_FACTOR: # //! move this to wide sweep
+  if current > expected * config.EDGE_SWEEP_PESSIMISM_FACTOR: # //! move this to wide sweep
     # Well, fuck. wide_sweep did a shitty job.
     print "Well, fuck. wide_sweep did a shitty job." # DEBUG
     # //! implement!!! time/binary search inward from min/max
     return
 #//!
-#  elif current =< EDGE_SWEEP_CHUNK_SIZE:
+#  elif current =< config.EDGE_SWEEP_CHUNK_SIZE:
 #    # mmap the whole thing, search like a banshee.
 #    return
 
@@ -399,12 +381,10 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
   done = False
   looking_for = LOOKING_FOR_BOTH # We want both min and max boundries right now.
   while not done:
-    global stats
-    stats['edge_sweep_loops'] += 1
-    children = []
     for near_guess in nearest_guesses:
       if near_guess.get_is_boundry():
         continue # It's already been found. Continue to the other.
+      stats.edge_sweep_loops += 1
       print "ng: %s" % near_guess # DEBUG
       result = optimistic_edge_search(log, near_guess, looking_for, times, filesize)
 
@@ -442,12 +422,12 @@ def edge_sweep(log, hits, nearest_guesses, filesize, times):
 #----------------------------------------------------------------------------------------------------------------------
 # binary_search_guess
 #----------------------------------------------------------------------------------------------------------------------
-def binary_search_guess(min, max):
+def binary_search_guess(nearest_guesses, desired):
   """Straight up regular binary search calculation.
 
   Inputs:
-    min - low  seek location (int) to use in calculation
-    max - high seek location (int) to use in calculation
+    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+    desired         - datetime we're looking for in the log [IGNORED]
 
   Returns:
     int - point in file to seek to next search
@@ -455,7 +435,7 @@ def binary_search_guess(min, max):
   Raises: Nothing
   """
   # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
-  focus = ((max - min) / 2) + min
+  focus = ((nearest_guesses[1] - nearest_guesses[0]) / 2) + nearest_guesses[0]
   return focus
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -475,8 +455,62 @@ def time_search_guess(nearest_guesses, desired):
 
   Raises: Nothing
   """
-  # //! implement!
-  pass
+  SECONDS_PER_DAY = 86400
+  # For now, we assume last_timestamp() got called.
+  #if nearest_guesses[1].get_time() == datetime.max:
+  #  # haven't hit any actual point in the file, yet, so max guess is at default value.
+  #  pass
+
+  # Let's do a little math. Let:
+  #  r == lowest  guess in nearest_guesses (datetime)
+  #  e == highest guess in nearest_guesses (datetime)
+  #  d == desired time (datetime)
+  #  d == desired time (datetime)
+  #  i == average logs per second (int)
+  #  t == average log size in bytes (int)
+  #
+  # (x - y) is the time between two datetime objects (i.e. (d - r) or (e - d)). Datetime math results in a timedelta
+  # object, so we have to convert this to an integer.
+  #  j == x - y (timedelta)
+  #  o == j.days * SECONDS_PER_DAY
+  #  b == o + j.seconds
+  #
+  # Now, with b as the estimated seconds, we can multiply that by the average logs per second and average log size to
+  # get an estimated file location distance between the two datetimes in question. For (d - r), add r.get_loc() (file
+  # location of r) to obtain the distance from beginning of file. For (e - d), subtract this estimate from e.get_loc()
+  # to obtain estimated distance from beginning of file. Average those to get a better guess.
+  #  p == (b * i * t) + r.get_loc() (for d - r)
+  #  l == e.get_loc() - (b * i * t) (for e - d)
+  #  z == (l + p) / 2
+  #
+  # z is your location in the file to go look for your desired log entry.
+
+  it = ((config.APPROX_MAX_LOGS_PER_SEC + config.APPROX_MIN_LOGS_PER_SEC) / 2.0) * config.AVG_LOG_SIZE
+#  print "   it: %7.3f" % it # DEBUG
+
+  low_j  = desired - nearest_guesses[0].get_time()
+  high_j = nearest_guesses[1].get_time() - desired
+#  print "   r: %s" % nearest_guesses[0].get_time() # DEBUG
+#  print "    d: %s" % desired # DEBUG
+#  print "    e: %s" % nearest_guesses[1].get_time() # DEBUG
+#  print "   lj: %s: %3d, %6d" % (low_j,  low_j.days,  low_j.seconds) # DEBUG
+#  print "   hj: %s: %3d, %6d" % (high_j, high_j.days, high_j.seconds) # DEBUG
+
+  low_ob  =  low_j.days * SECONDS_PER_DAY +  low_j.seconds
+  high_ob = high_j.days * SECONDS_PER_DAY + high_j.seconds
+#  print "  lob: %6d" % low_ob # DEBUG
+#  print "  hob: %6d" % high_ob # DEBUG
+  
+  p = (low_ob  * it) + nearest_guesses[0].get_loc()
+  l = nearest_guesses[1].get_loc() - (high_ob * it)
+  print " lbit: %6d" % (low_ob  * it) # DEBUG
+  print " hbit: %6d" % (high_ob * it) # DEBUG
+  print "    p: %6d" % p # DEBUG
+  print "    l: %6d" % l # DEBUG
+
+  z = (l + p) / 2
+  print "    z: %6d" % z # DEBUG
+  return int(z)
 
 #----------------------------------------------------------------------------------------------------------------------
 # first_timestamp: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
@@ -493,13 +527,43 @@ def first_timestamp(log):
   Raises: 
     ValueError - parse_time had error parsing string into datetime
   """
-  chunk = log.read(LOG_TIMESTAMP_SIZE) # Just need barely enough to get the whole timestamp from the first line.
+  if log.tell() != 0:
+    log.seek(0) # please please please don't make me seek...
+  chunk = log.read(config.LOG_TIMESTAMP_SIZE) # Just need barely enough to get the whole timestamp from the first line.
 #  print chunk # DEBUG
-  global stats
-  stats['reads'] += 1
+  stats.reads += 1
 
   # get the datetime
   return parse_time(chunk)
+
+#----------------------------------------------------------------------------------------------------------------------
+# last_timestamp
+#----------------------------------------------------------------------------------------------------------------------
+def last_timestamp(log):
+  """Reads the end of the file to find the last timestamp.
+
+  Inputs:
+    log - opened log file
+
+  Returns:
+    datetime - last timestamp in file
+
+  Raises: 
+    ValueError - parse_time had error parsing string into datetime
+  """
+  log.seek(-config.MORE_THAN_ONE_LINE, os.SEEK_END) # minus sign is important
+  chunk = log.read(config.MORE_THAN_ONE_LINE) # Just need barely enough to get the whole timestamp from the first line.
+
+  nl_index = chunk[:-1].rfind("\n") # file could end with a newline so go back one in the chunk to skip it
+  if nl_index == -1:
+    return None
+    # //! better error case? use rindex so it raises ValueError?
+  nl_index += 1 # get past the newline
+
+  stats.reads += 1
+
+  # get the datetime
+  return parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
 
 #----------------------------------------------------------------------------------------------------------------------
 # pessismistic_forward_search
@@ -518,13 +582,12 @@ def pessismistic_forward_search(log, seek_loc, times):
   Raises: 
     ValueError - parse_time had error parsing string into datetime
   """
-  global stats
   log.seek(seek_loc)
-  stats['seeks'] += 1
+  stats.seeks += 1
 
   # "More than one line" means it needs a newline and at least LOG_TIMESTAMP_SIZE bytes after that
-  chunk = log.read(MORE_THAN_ONE_LINE) 
-  stats['reads'] += 1
+  chunk = log.read(config.MORE_THAN_ONE_LINE) 
+  stats.reads += 1
 
   # find the nearest newline so we can find the timestamp
   nl_index = chunk.find("\n")
@@ -535,7 +598,7 @@ def pessismistic_forward_search(log, seek_loc, times):
 
   # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
   # send to parse_time to get datetime
-  time = parse_time(chunk[nl_index : nl_index + LOG_TIMESTAMP_SIZE])
+  time = parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
 
   result = LogLocation(seek_loc + nl_index, time,
                        logloc.time_cmp(time, times[0]), # how it compares, min
@@ -574,22 +637,21 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
   if looking_for == LOOKING_FOR_MAX: # DEBUG
     print "LOOKING_FOR_MAX" # DEBUG
 
-  global stats
   seek_loc = guess.get_loc()
   if guess.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
     # we're looking for the max and we're above it, so read from a chunk away up to here.
 #    print "looking high" # DEBUG
-#    print "%d %d" % (guess.get_loc(), guess.get_loc() - EDGE_SWEEP_CHUNK_SIZE) # DEBUG
-    seek_loc -= EDGE_SWEEP_CHUNK_SIZE
+#    print "%d %d" % (guess.get_loc(), guess.get_loc() - config.EDGE_SWEEP_CHUNK_SIZE) # DEBUG
+    seek_loc -= config.EDGE_SWEEP_CHUNK_SIZE
     seek_loc = 0 if seek_loc < 0 else seek_loc
     log.seek(seek_loc)
-    stats['seeks'] += 1
+    stats.seeks += 1
   else:
     # we're looking for the min and we're below it, so read starting here.
     log.seek(seek_loc)
-    stats['seeks'] += 1
-  chunk = log.read(EDGE_SWEEP_CHUNK_SIZE)
-  stats['reads'] += 1
+    stats.seeks += 1
+  chunk = log.read(config.EDGE_SWEEP_CHUNK_SIZE)
+  stats.reads += 1
   at_eof = True if log.tell() == filesize else False # Python, why u no have file.eof?
 
   prev_minmax = guess.get_minmax()
@@ -604,7 +666,7 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
     try:
       # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
       # send to parse_time to get datetime
-      time = parse_time(chunk[chunk_loc : chunk_loc + LOG_TIMESTAMP_SIZE])
+      time = parse_time(chunk[chunk_loc : chunk_loc + config.LOG_TIMESTAMP_SIZE])
 
       # start building result
       result.set_loc(seek_loc + chunk_loc)
@@ -672,10 +734,16 @@ def optimistic_edge_search(log, guess, looking_for, times, filesize):
   # set the max to eof
   if not result.get_is_boundry() and at_eof and ((looking_for == LOOKING_FOR_MAX) or (looking_for == LOOKING_FOR_BOTH)):
     result.set_loc(seek_loc + len(chunk))
-    result.set_time(times[1])
-    result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
+    result.set_time(time)
+    result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
     result.set_is_max(True)
-#  print "short circuit: %s" % time # DEBUG
+
+  # If we're only looking for the min, and we hit eof and didn't find it... Well, it's not there, man. Sorry.
+  if not result.get_is_min() and at_eof and (looking_for == LOOKING_FOR_MIN):
+    result.set_loc(seek_loc + len(chunk))
+    result.set_time(time)
+    result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
+    result.set_is_min(True)
 
 #  print result # DEBUG
   return result
@@ -699,7 +767,7 @@ def parse_time(time_str):
   # join the first three back together again with ' ' as the seperator
   # parse the thing!
   # //! need to research a better (faster?) way to do this
-  just_timestamp = ' '.join(time_str.split()[:LOG_TIMESTAMP_PARTS])
+  just_timestamp = ' '.join(time_str.split()[:config.LOG_TIMESTAMP_PARTS])
 
   # parse with the illustrious strptime
   return datetime.strptime(just_timestamp + str(datetime.now().year), "%b %d %H:%M:%S%Y")
@@ -756,9 +824,9 @@ def expected_size(min_time, max_time):
   """
   # //! Use me somewhere! :(
   time_range = max_time - min_time
-  seconds = time_range.days * 3600 * 24 + time_range.seconds # We're ignoring microseconds.
+  seconds = time_range.days * 86400 + time_range.seconds # We're ignoring microseconds.
 
-  expected_bytes = APPROX_MAX_LOGS_PER_SEC * LOGS_PER_SEC_FUDGE_FACTOR * APPROX_LOG_SIZE * seconds
+  expected_bytes = config.APPROX_MAX_LOGS_PER_SEC * config.LOGS_PER_SEC_FUDGE_FACTOR * config.AVG_LOG_SIZE * seconds
   return int(expected_bytes)
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -776,11 +844,9 @@ def print_log_lines(log, bounds, writable=sys.stdout):
 
   Raises:  Nothing
   """
-  global stats
-
   start_loc = bounds[0].get_loc()
   log.seek(start_loc)
-  stats['seeks'] += 1
+  stats.seeks += 1
 
   end_loc = bounds[1].get_loc()
 
@@ -789,16 +855,16 @@ def print_log_lines(log, bounds, writable=sys.stdout):
   while curr < end_loc:
     # only print up to the end of our range
     chunk_size = 0
-    if curr + MAX_PRINT_CHUNK_SIZE <= end_loc:
-      chunk_size = MAX_PRINT_CHUNK_SIZE
+    if curr + config.MAX_PRINT_CHUNK_SIZE <= end_loc:
+      chunk_size = config.MAX_PRINT_CHUNK_SIZE
     else:
       chunk_size = end_loc - curr
 
     chunk = log.read(chunk_size)
-    stats['reads'] += 1
+    stats.reads += 1
+    stats.print_reads += 1
     curr += chunk_size
   
-    stats['print_reads'] += 1
     writable.write(chunk) # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
 #    print (chunk_size, end_loc - start_loc) # DEBUG
 #    print (start_loc, curr, end_loc) # DEBUG
@@ -823,10 +889,11 @@ def arg_time_parse(input, first_time):
   Returns: 
     list - [min time, max time] (if one specific time was requested, min and max will be the same)
 
-  Raises:  Nothing
-    //! Will raise NotTime and RegexBug...
+  Raises:
+    NotTime - The input was not a properly formatted time string.
+    RegexError - The regex went wonky.
   """
-  time_regex = re.compile(TIME_REGEX, re.IGNORECASE) 
+  time_regex = re.compile(config.TIME_REGEX, re.IGNORECASE) 
   times = time_regex.findall(input) # returns [(group1, group2)] for my regex
   if times == []:
     # Raise the alarm! No regex match!
@@ -835,7 +902,7 @@ def arg_time_parse(input, first_time):
   elif 0 < times[0] < 3:
     # Something's wrong with the regex. Only supposed to get 1 or 2 matches.
 #    print "REGEX BUG!" # DEBUG
-    raise RegexBug("Something went wrong with the regex.", TIME_REGEX, input)
+    raise RegexBug("Something went wrong with the regex.", config.TIME_REGEX, input)
   retval = []
   lacking_secs = False
   for time in times[0]:
@@ -893,37 +960,98 @@ Example:
 if __name__ == '__main__':
   # Setup arg parser
   parser = OptionParser(usage = usage)
+  parser.add_option("-b", "--binary",
+                    action="store_true", dest="binary_search", default=False,
+                    help="use pure binary search instead of time-adjusted binary search")
   parser.add_option("-v", "--verbose",
                     action="store_true", dest="verbose", default=False,
                     help="print out statistics at end of run")
   
   (options, args) = parser.parse_args()
 
-  if len(args) < REQUIRED_NUM_ARGS:
+  ###
+  # load config
+  ###
+  # //! if flag, load that, else default
+  # load configuration
+  tgrep_config = imp.load_source('tgrep_config', 'config.py')
+  from tgrep_config import stats, config
+
+  ###
+  # verify inputs
+  ###
+  if len(args) < MIN_NUM_ARGS:
     parser.error("Missing the required 'times' argument.")
     # exit stage right w/ help message and that string
+  if len(args) > MAX_NUM_ARGS:
+    parser.error("Too many args. Just need times and path to log file.")
+
+  # Next, check for colons. At least one of them needs at least one colon. That's the time!
+  possible = []
+  for arg in args:
+    if arg.find(':') != -1:
+      possible.append(arg) # Probably a time. Could possibly be a file, though.
+      # Seriously, why let a colon into your file names OS X?
+  if possible == []:
+    parser.error("One of the args needs to be a time or time range.")
+
+  # check for the file
+  existing = []
+  if len(args) != MIN_NUM_ARGS:
+    for arg in args:
+      if os.path.isfile(arg):
+        existing.append(arg)
+    # whine if log file doesn't exists
+    if existing == []:
+      parser.error("Neither arg was an existing file. '%s' and '%s' do not exist." % (args[0], args[1]))
+    elif len(existing) == len(args):
+      # too many files!!!
+      parser.error("Both files exist. Either '%s' or '%s' should be moved or renamed." % (args[0], args[1]))
+  else:
+    existing.append(config.DEFAULT_LOG) # No log supplied, so use default
+
+  # I'm paranoid...
+  the_log = ''
+  if len(existing) > 1:
+    parser.error("Too many log files. Pick one: %s." % args)
+  else:
+    the_log = existing[0]
+
+  # whittle the time possibles down to not-files
+  for p in possible:
+    if p == the_log:
+      possible.remove(the_log)
+
+  the_time = ''
+  if len(possible) != 1:
+    if the_log.find(':') != -1:
+      parser.error("No time specified. The time-like arg was an existing file: '%s'." % the_log)
+    else:
+      parser.error("No time specified. args %s boiled down to nothing." % args)
+  else:
+    the_time = possible[0]
   
+  # We still don't know whether the the_time is an actual time (or time range), or if it's just "x:y:z" or
+  # something. tgrep will figure that out.
+
   ###
   # tgrep actually starts here...
   ###
-  # grep the file
-  tgrep([None, None], DEFAULT_LOG) # //! change this..., just pass in args
-  #//! Make sure we're doing all this
-  # parse input
-  # figure out which file to open
-  # figure out the time range
-  # don't care about arg order
+  tgrep(the_time, the_log, options.binary_search) # grep the file
 
+  ###
   # print statistics
+  ###
   if options.verbose:
     print "\n\n -- statistics --"
-    print "seeks: %8d" % stats['seeks']
-    print "reads: %8d" % stats['reads']
-    print "print reads: %2d" % stats['print_reads']
-    print "wide sweep loops: %3d" % stats['wide_sweep_loops']
-    print "edge sweep loops: %3d" % stats['edge_sweep_loops']
-    print "wide sweep time:  %s" % str(stats['wide_sweep_time'])
-    print "edge sweep time:  %s" % str(stats['edge_sweep_time'])
-    print "find  time:       %s" % str(stats['find_time'])
-    print "print time:       %s" % str(stats['print_time'])
-    print "total time:       %s" % str(stats['find_time'] + stats['print_time'])
+    print "seeks: %8d" % stats.seeks
+    print "reads: %8d (total)" % stats.reads
+    print "reads: %8d (just for printing)" % stats.print_reads
+    print "wide sweep loops: %4d" % stats.wide_sweep_loops
+    print "edge sweep loops: %4d" % stats.edge_sweep_loops
+    print "wide sweep time:  %s" % str(stats.wide_sweep_time)
+    print "edge sweep time:  %s" % str(stats.edge_sweep_time)
+    print "find  time:       %s" % str(stats.find_time)
+    print "print time:       %s" % str(stats.print_time)
+    print "total time:       %s" % str(stats.find_time + stats.print_time)
+
