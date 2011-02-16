@@ -144,6 +144,7 @@ import imp
 import logloc
 from logloc import LogLocation
 from anomaly import NotFound, NotTime, RegexError
+from config import stats, config
 
 # CONSTANTS //! purge unused first, then move to config.py
 
@@ -435,7 +436,7 @@ def binary_search_guess(nearest_guesses, desired):
   Raises: Nothing
   """
   # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
-  focus = ((nearest_guesses[1] - nearest_guesses[0]) / 2) + nearest_guesses[0]
+  focus = ((nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) / 2) + nearest_guesses[0].get_loc()
   return focus
 
 #----------------------------------------------------------------------------------------------------------------------

@@ -53,11 +53,25 @@ class TgrepTestCase(unittest.TestCase):
     self.log_entries.close()
 
   def test_bsg(self):
-    self.assertEquals(  5, tgrep.binary_search_guess(0,   10))
-    self.assertEquals( 50, tgrep.binary_search_guess(0,  100))
-    self.assertEquals(500, tgrep.binary_search_guess(0, 1000))
-    self.assertEquals(279, tgrep.binary_search_guess(337, 222)) # actually is 279.5, testing round
-    self.assertEquals(496918739, tgrep.binary_search_guess(0, 993837478))
+    min = LogLocation(0, datetime(datetime.now().year,  2, 13, 23, 33, 11),
+                      LogLocation.MATCH,
+                      LogLocation.MATCH)
+    max = LogLocation(10, datetime(datetime.now().year,  2, 13, 23, 33, 15),
+                      LogLocation.TOO_HIGH,
+                      LogLocation.TOO_HIGH)
+    bounds = [min, max]
+    foo = None # ignored anyways
+    self.assertEquals(  5, tgrep.binary_search_guess(bounds, foo))
+    bounds[1].set_loc(100)
+    self.assertEquals( 50, tgrep.binary_search_guess(bounds, foo))
+    bounds[1].set_loc(1000)
+    self.assertEquals(500, tgrep.binary_search_guess(bounds, foo))
+    bounds[0].set_loc(337)
+    bounds[1].set_loc(222)
+    self.assertEquals(279, tgrep.binary_search_guess(bounds, foo)) # actually is 279.5, testing round
+    bounds[0].set_loc(0)
+    bounds[1].set_loc(993837478)
+    self.assertEquals(496918739, tgrep.binary_search_guess(bounds, foo))
 
   def test_tsg(self):
     #//! impl
@@ -135,7 +149,6 @@ class TgrepTestCase(unittest.TestCase):
     bounds = [min, max]
     tgrep.print_log_lines(self.mlog_file, bounds, self.log_entries)
     self.assertEquals(expected_log2, self.log_entries.getvalue())
-#    self.assertRaises(ValueError, tgrep.parse_time, time_str="Feb 29 18:31:30") # day
 
   def test_prn_m_3(self):
     global expected_log3
