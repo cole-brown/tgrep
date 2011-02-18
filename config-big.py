@@ -45,7 +45,7 @@ config = Configuration(
 
   # Maximum number of times to hit inside the range once time-adjusted binary search has gone into refocus mode.
   # This will be applied independently to the upper and lower bounds of the search.
-  WIDE_SWEEP_MAX_RANGE_HITS = 2,
+  WIDE_SWEEP_MAX_RANGE_HITS = 1,
 
   # The initial binary time-adjusted search will quit once it's either this close (in bytes) or stabalized.
   WIDE_SWEEP_CLOSE_ENOUGH = CLOSE_ENOUGH, # bytes. //! adjust to ~(1500-500)/2*log_size
@@ -81,8 +81,8 @@ config = Configuration(
   # of the file. How do you want these seperated when they're printed out?
   DOUBLE_MATCH_SEP = '\n\n\n',
 
-  # Don't turn this on. Seriously...
-  DEBUG_PRINT = True,
+  # Don't turn this on. Seriously... Unless you want to debug.
+  DEBUG = False,
 
   # Maximum size in bytes of mmap-able region.
   MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here  //! Ain't usin' this...
@@ -108,6 +108,7 @@ stats = Statistics(
   find_time  = None,
   print_time = None,
   file_size = '0 bytes',
+  print_size = 0, # bytes
 
   # extra verbosity statistics
   requested_times = [],

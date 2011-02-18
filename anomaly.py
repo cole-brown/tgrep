@@ -1,51 +1,69 @@
-# //! stuff? check github for common headers?
+
+
+class InvalidArgument(Exception):
+  """Exception raised for when a func was passed something it didn't like.
+
+  Attributes:
+    msg - explanation of the error.
+    arg - the arg (must be stringable via str(arg))
+  """
+
+  def __init__(self, msg, arg):
+    self.msg = msg
+    self.arg = arg
+
+  def __str__(self):
+    return "%s\arg: %s\n" % (self.msg, str(self.arg))
+
 
 class NotFound(Exception):
-    """Exception raised for when nothing is found in the log.
+  """Exception raised for when nothing is found in the log.
 
-    Attributes:
-        msg     - explanation of the error.
-        times   - min/max array of times looking for
-        guesses - nearest guesses when time was discovered not to exist in log
-    """
+  Attributes:
+    msg     - explanation of the error.
+    times   - min/max array of times looking for
+    guesses - nearest guesses when time was discovered not to exist in log
+  """
 
-    def __init__(self, msg, times, guesses):
-        self.msg = msg
-        self.times = times
-        self.guesses = guesses
+  def __init__(self, msg, times, guesses):
+    self.msg = msg
+    self.times = times
+    self.guesses = guesses
 
-    def __str__(self):
-        return "%s\ntimes: %s\nguesses: %s" % (self.msg, self.times, self.guesses)
+  def __str__(self):
+    return "%s\ntimes: %s\nguesses: %s" % (self.msg, self.times, self.guesses)
+
 
 class NotTime(Exception):
-    """Exception raised when a string sent to arg_time_parse is not a time or time range.
+  """Exception raised when a string sent to arg_time_parse is not a time or time range.
 
-    Attributes:
-        msg     - explanation of the error.
-        input   - string passed in
-    """
+  Attributes:
+    msg     - explanation of the error.
+    input   - string passed in
+  """
 
-    def __init__(self, msg, input):
-        self.msg = msg
-        self.input = input
+  def __init__(self, msg, input):
+    self.msg = msg
+    self.input = input
 
-    def __str__(self):
-        return "%s\ninput string: %s" % (self.msg, self.input)
+  def __str__(self):
+    return "%s\ninput string: %s" % (self.msg, self.input)
+
 
 class RegexError(Exception):
-    """Exception raised when something's wrong with a regex.
+  """Exception raised when something's wrong with a regex.
 
-    Attributes:
-        msg     - explanation of the error
-        regex   - regex string
-        input   - string regex was working on
-    """
+  Attributes:
+    msg     - explanation of the error
+    regex   - regex string
+    input   - string regex was working on
+  """
 
-    def __init__(self, msg, regex, input):
-        self.msg = msg
-        self.regex = regex
-        self.input = input
+  def __init__(self, msg, regex, input):
+    self.msg = msg
+    self.regex = regex
+    self.input = input
 
-    def __str__(self):
-        return "%s\ninput string: %s\nregex string: 5s" % (self.msg, self.input, self.regex)
+  def __str__(self):
+    return "%s\ninput string: %s\nregex string: 5s" % (self.msg, self.input, self.regex)
 
