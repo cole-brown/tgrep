@@ -13,11 +13,12 @@ from extra import Configuration, Statistics
 #----------------------------------------------------------------------------------------------------------------------
 # config
 #----------------------------------------------------------------------------------------------------------------------
-LOG_LINE_BYTES = 377
-A_GOOD_CHUNK_TO_READ = 4096 * 10 # bytes //! bump this up?
+LOG_LINE_BYTES = 500 # size of an average log line
+A_GOOD_CHUNK_TO_READ = 4096 * 50 # bytes (200 KB) //! bump this up?
+CLOSE_ENOUGH = 3000 * LOG_LINE_BYTES # bytes (within ~3000 log entries)
 config = Configuration(
   # Path to log to default to if none is specified on the command line.
-  DEFAULT_LOG = "loggen.log", # //! "/log/haproxy.log" 
+  DEFAULT_LOG = "biglog.log", # //! "/log/haproxy.log" 
 
   # Used to estimate where in the log file a particular timestamp is.
   AVG_LOG_SIZE = LOG_LINE_BYTES, # bytes. That's the size of the one line I got to see in the post, anyways. 
@@ -40,14 +41,14 @@ config = Configuration(
   # If the time-adjusted binary search hits inside the region of desired logs, it's not much help. We need mins and
   # maxes. This is how much to move the out by (out from the focus towards lower or upper bound).  seek loc to reel back
   # the search.
-  REFOCUS_FACTOR = 0.75,
+  REFOCUS_FACTOR = 0.15,
 
-  # Maximum number of times to hit inside the range once time-adjusted binary search has gone into slower mode.
+  # Maximum number of times to hit inside the range once time-adjusted binary search has gone into refocus mode.
   # This will be applied independently to the upper and lower bounds of the search.
   WIDE_SWEEP_MAX_RANGE_HITS = 2,
 
   # The initial binary time-adjusted search will quit once it's either this close (in bytes) or stabalized.
-  WIDE_SWEEP_CLOSE_ENOUGH = 8128, # bytes. //! adjust to ~(1500-500)/2*log_size
+  WIDE_SWEEP_CLOSE_ENOUGH = CLOSE_ENOUGH, # bytes. //! adjust to ~(1500-500)/2*log_size
   
   # Amount (in bytes) of the file that the edge-finding algorithm will read in at a time. Higher /might/ give better
   # speed but will also use more memory.
