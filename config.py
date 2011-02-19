@@ -107,6 +107,8 @@ stats = Statistics(
   find_time  = None,
   print_time = None,
   file_size = '0 bytes',
+  print_size = 0, # bytes
+  edge_sweep_size = 0, # bytes
 
   # extra verbosity statistics
   requested_times = [],

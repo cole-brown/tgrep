@@ -20,12 +20,6 @@ config = Configuration(
   # Path to log to default to if none is specified on the command line.
   DEFAULT_LOG = "biglog.log", # //! "/log/haproxy.log" 
 
-  # Used to estimate where in the log file a particular timestamp is.
-  AVG_LOG_SIZE = LOG_LINE_BYTES, # bytes. That's the size of the one line I got to see in the post, anyways. 
-  APPROX_MAX_LOGS_PER_SEC = 0.3, # //!1500
-  APPROX_MIN_LOGS_PER_SEC = 0, # //! 500
-  LOGS_PER_SEC_FUDGE_FACTOR = 1.2, # //! am I using any of these?
-
   # used to calculate a second's worth of bytes
   BYTES_PER_SECOND_FUDGE_FACTOR = 1.2, 
 
@@ -82,7 +76,7 @@ config = Configuration(
   DOUBLE_MATCH_SEP = '\n\n\n',
 
   # Don't turn this on. Seriously... Unless you want to debug.
-  DEBUG = False,
+  DEBUG = True,
 
   # Maximum size in bytes of mmap-able region.
   MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here  //! Ain't usin' this...
@@ -109,6 +103,7 @@ stats = Statistics(
   print_time = None,
   file_size = '0 bytes',
   print_size = 0, # bytes
+  edge_sweep_size = 0, # bytes
 
   # extra verbosity statistics
   requested_times = [],

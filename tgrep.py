@@ -76,25 +76,17 @@ README.mk
 
 grep //! 
 
-Classify the functions in here.
-  LogSearch
-    tgrep (time grep)
-    bgrep (binary grep)
-    attributes:
-      log
-      path_to_log
-      times
-      guesses
-      filesize
+comment code
+
+space out code?
+
+tgrep.py -> tgrep
 
 make branch, remove debugs
 
-prettify the errors from NoMatch and parse_time
+remove header from logloc?
 
-README.
-  Assumes flat/linear layout of log. No traffic bumps or dips.
-  expanded acceptable time inputs
-
+comment other files?
 
 Notes:
   http://gskinner.com/RegExr/    # REGEX!
@@ -123,964 +115,960 @@ from anomaly import NotFound, NotTime, RegexError, InvalidArgument
 if __name__ != '__main__':
   # Auto-load for unit tests. Usually loaded down at bottom via imp.
   from config import stats, config
+import impo # //!
 
-# CONSTANTS //! purge unused first, then move to config.py
-
+# CONSTANTS
 DEFAULT_CONFIG = 'config.py'
 
 # The only required arg is time
 MIN_NUM_ARGS = 1
 MAX_NUM_ARGS = 2 # time and file path
 
-# //! constants that need moving somewhere else?
-LOOKING_FOR_MIN     = 0
-LOOKING_FOR_MAX     = 1
-LOOKING_FOR_BOTH    = 2
-LOOKING_FOR_NEITHER = 3
 
-#----------------------------------------------------------------------------------------------------------------------
-# tgrep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def tgrep(arg_time_str, path_to_log, search_type):
-  """Searches the log file for entries in the range of the datetimes in the times list.
+#######################################################################################################################
+# LogSearch: class containing that awesome tgrep function
+#######################################################################################################################
+class LogSearch:
 
-  Inputs:
-    arg_time_str - validated to at least have a colon in it...
-    path_to_log  - validated to be the path to an existing file.
+  # used by edge sweep and optimistic search
+  LOOKING_FOR_MIN     = 0
+  LOOKING_FOR_MAX     = 1
+  LOOKING_FOR_BOTH    = 2
+  LOOKING_FOR_NEITHER = 3
 
-  Returns: Nothing
+  #--------------------------------------------------------------------------------------------------------------------
+  # initialize them variables and such
+  #--------------------------------------------------------------------------------------------------------------------
+  def __init__(self, arg_time_str, path_to_log):
+    """Initializes LogSearch.
 
-  Raises:  Nothing
+    Inputs:
+      input_time - validated to at least have a colon in it...
+      log_path   - validated to be the path to an existing file.
 
-  Prints:  Logs
-  """
-
-  filesize = os.path.getsize(path_to_log)
-  stats.file_size = pretty_size(filesize)
-
-  try:
-    end   = None
-    start = datetime.now()
-    # open 'rb' to avoid a bug in file.tell() in windows when file has unix line endings, even though I can't test in
-    # windows, and have nyo idea if the rest will work there.
-    with open(path_to_log, 'rb') as log: 
-      log_timestamps = [first_timestamp(log), last_timestamp(log)]
-      DBG("first: %s" % log_timestamps[0]) # DEBUG
-      DBG("last:  %s" % log_timestamps[1]) # DEBUG
-      req_times = arg_time_parse(arg_time_str, log_timestamps[0])
-   
-      # DEBUG
-      # //! only here temp. These are for loggen.log
-      # Feb 13 23:33 (whole minute)
-#      all_times = [[datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]]
-      # Feb 13 23:33:11 (one log line)
-#      all_times = [[datetime(2011, 2, 13, 23, 33, 11), datetime(2011, 2, 13, 23, 33, 11)]]
-      # Feb 14 07:07:39 (End of File, exactly one line)
-#      all_times = [[datetime(2011, 2, 14, 7, 7, 39), datetime(2011, 2, 14, 7, 7, 39)]]
-      # Feb 14 07:07:39 (End of File, chunk)
-#      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 7, 39)]]
-      # Feb 14 07:07:39 (End of File, chunk, no exact matches)
-#      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 9, 0)]]
-      # Feb 13 18:31:30 (Start of File, exactly one line)
-#      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 31, 30)]]
-      # Feb 13 18:31:30 (Start of File, chunk)
-#      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]]
-      # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
-#      all_times = [[datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]]
-      # NO MATCH!
-#      all_times = [[datetime(2011, 2, 14, 1, 3, 0), datetime(2011, 2, 14, 1, 3, 0)]]
-      # NO MATCH Feb 13 18:31:30 (before Start of File)
-#      all_times = [[datetime(2011, 2, 13, 4, 31, 30), datetime(2011, 2, 13, 17, 31, 30)]]
-   
-      stats.requested_times = req_times
-      DBG(req_times) # DEBUG
-   
-#      DBG("at: %s" % all_times) # DEBUG
-      all_times = time_check(req_times, log_timestamps)
-      DBG("at: %s" % all_times) # DEBUG
-      for times in all_times:
-   
-        # Jump around the file in binary time-based fashion first
-        DBG("\n\nwide sweep") # DEBUG
-        sweep_start = datetime.now()
-        hits, nearest_guesses = wide_sweep(log, filesize, times, search_type, log_timestamps)
-        sweep_end = datetime.now()
-        stats.wide_sweep_time = sweep_end - sweep_start
-        stats.wide_sweep_end_locs.append(deepcopy(nearest_guesses))
-    
-        # Now that we're close, find the edges of the desired region of the log in linear fashion
-        DBG("\n\nedge sweep") # DEBUG
-        sweep_start = datetime.now()
-        edge_sweep(log, hits, nearest_guesses, filesize, times) # updates nearest_guesses, so no return
-        sweep_end = datetime.now()
-        stats.edge_sweep_time = sweep_end - sweep_start
-    
-        # Figure out how much time searching took.
-        end = datetime.now()
-        DBG("\n\n") # DEBUG
-        stats.find_time = end - start
-    
-        stats.final_locs.append(nearest_guesses)
-        start = datetime.now()
-        # Now, on to printing!
-        # nearest_guesses is now a misnomer. They're the bounds of the region-to-print.
-        print_log_lines(log, nearest_guesses)
-    
-        # Figure out how much time printing took.
-        end = datetime.now()
-        stats.print_time = end - start
-        
-        if (len(all_times) > 1) and (config.DOUBLE_MATCH_SEP != ''):
-          print config.DOUBLE_MATCH_SEP
-
-  # Beautify some errors, but keep it debug friendly.
-  except NotTime as err:
-    print >>sys.stderr, "Timestamp parser had a bit of trouble...\n"
-    print >>sys.stderr, err
-
-    if config.DEBUG:
-      print "\n"
-      raise
-  except NotFound as err:
-    print >>sys.stderr, "No match for '%s' time range in log file.\n" % arg_time_str
-    print >>sys.stderr, err
-
-    if config.DEBUG:
-      print "\n"
-      raise
-  except RegexError as err:
-    print >>sys.stderr, "Regex trouble. The regex for parsing input time got an unexpected number of matches.\n"
-    print >>sys.stderr, err
-
-    if config.DEBUG:
-      print "\n"
-      raise
-  except IOError as err:
-    print >>sys.stderr, "Trouble reading or opening file.\n"
-    print >>sys.stderr, err
-
-    if config.DEBUG:
-      print "\n"
-      raise
+    Returns: Nothing
   
+    Raises:  Nothing
+    """
+    DBG("__init__") # DEBUG
 
+    self.input_time = arg_time_str
+    self.log_path   = path_to_log
 
-#----------------------------------------------------------------------------------------------------------------------
-# time_check: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def time_check(times, log_timestamps):
-  """Determines if times are valid for supplied log_timestamps.
-
-  Since no day is supplied on the command line, there could be a double match in the file: one on the first day and one on the second. If so, this 
-
-  Inputs:
-    times       - Should be a list of size two with the low and high times requeted.
-    log_timestamps  - [first timestamp in file, last timestamp in file]
-
-  Returns: 
-    list - a list of 'times' lists. Could be just [times]. Might be [times, [times[0]+a_day, times[1]+a_day]].
-
-  Raises: Nothing
-  """
-  times_plus = [times[0].replace(day=times[0].day+1), times[1].replace(day=times[1].day+1)]
-  all_times = [times, times_plus]
-#  DBG("times: %s" % times     ) # DEBUG
-#  DBG("+1day: %s" % times_plus) # DEBUG
-
-  result = []
-  for tlist in all_times:
-    if (log_timestamps[0] <= tlist[0] <= log_timestamps[1]) or (log_timestamps[0] <= tlist[1] <= log_timestamps[1]):
-      result.append(tlist)
-
-#  DBG(result) # DEBUG
-  return result
+  #--------------------------------------------------------------------------------------------------------------------
+  # tgrep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def tgrep(self, search_type):
+    """Searches the log file for entries in the range of the datetimes passed in to the constructor..
   
-
-
-#----------------------------------------------------------------------------------------------------------------------
-# wide_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def wide_sweep(log, filesize, times, search_type, log_timestamps):
-  """Binary search of log file, with time-based adjustment, to get min/max guesses close to the range.
-
-  Inputs:
-    log            - opened log file
-    filesize       - size of log
-    times          - Should be a list of size two with the min and max datetimes. Format: [min, max]
-    search_type    - True: use binary_search_guess; False: use time_search_guess
-    log_timestamps - [first timestamp in file, last timestamp in file]
-
-  Returns: 
-    (LogLocation a, [LogLocation, LogLocation]) tuple
-      a    - any exact matches from previous search methods
-      list - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-
-  Raises: Nothing
-  """
-  # binary search, with friends!
-  search_func = None
-  if search_type:
-#    DBG("BINARY search!") # DEBUG
-    search_func = binary_search_guess
-  else:
-#    DBG("TIME search!") # DEBUG
-    search_func = time_search_guess
-
-  # start min guess way too low, and max guess way too high. Just to prime the pump.
-  too_high_time = log_timestamps[1].replace(second=log_timestamps[1].second + 1)
-  nearest_guesses = [LogLocation(0,        log_timestamps[0],  LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
-                     LogLocation(filesize, too_high_time,      LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
-  focus = 0 # where we'll jump to for the text search
-  hits  = [] # any exact matches to min or max we happen upon along the way
-  done = False
-  is_min_guess = False # toggle
-  bad_results = [0, 0]
-  # binary time-based search until focal point comes up the same twice or we're close enough as per config param
-  while not done:
-    for time in times:
-      is_min_guess = not is_min_guess # toggle 
-      if bad_results[0 if is_min_guess else 1] > config.WIDE_SWEEP_MAX_RANGE_HITS:
-        if bad_results[1 if is_min_guess else 0] > config.WIDE_SWEEP_MAX_RANGE_HITS: # note the 0 & 1 swap
-          # If we've gotten both wrong too much, give up.
-          done = True
-          break
-        # If we've gotten this guess wrong too much, just skip it.
-        continue
-
-      stats.wide_sweep_loops += 1
-      if bad_results[0 if is_min_guess else 1]:
-        stats.refocused_wide_sweep_loops += 1
-
-      # time_search_guess, probably. Maybe binary_search_guess.
-      focus = search_func(nearest_guesses, time, log_timestamps, filesize, is_min_guess)
-      DBG("focus: %10d" % focus) # DEBUG
-      if bad_results[0 if is_min_guess else 1]:
-        focus = refocus(nearest_guesses, focus, is_min_guess)
-      DBG("focus: %10d" % focus) # DEBUG
-      DBG("binary: %d" % binary_search_guess(nearest_guesses, time, log_timestamps, filesize, is_min_guess)) # DEBUG
-      DBG("time:   %d" % focus) # DEBUG
-
-      try:
-        if isinstance(focus, float):
-          DBG("FOCUS IS FLOAT!!!") # DEBUG
-        result = pessimistic_forward_search(log, focus, times, nearest_guesses, filesize) # check focus for timestamp
-        good_result = update_guess(result, nearest_guesses) # updates nearest_guesses in place
-      except NotTime:
-        # something went wrong... dunno what, but we couldn't parse a timestamp from that location.
-        good_result = False
-
-      if LogLocation.MATCH in result.get_minmax():
-        DBG("found it!") # DEBUG
-        hits.append(result)
-
-      DBG(result) # DEBUG
-      DBG(good_result) # DEBUG
-
-      if not good_result and is_min_guess:
-        bad_results[0] += 1
-      elif not good_result and not is_min_guess:
-        bad_results[1] += 1
-
-#      DBG("bad low: %d" % bad_results[0] ) # DEBUG
-#      DBG("bad high: %d" % bad_results[1]) # DEBUG
-      DBG(nearest_guesses) # DEBUG
-   
-      # check if we can quit yet
-      if (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
-        # //! use expected_size here instead?
-        DBG("close enough!") # DEBUG
-        done = True # exit while
-        break # exit for
-      DBG("") # DEBUG
+    Inputs:
   
-  DBG(hits) # DEBUG
-  DBG(nearest_guesses) # DEBUG
-  DBG((nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc(), nearest_guesses[0].get_loc(), nearest_guesses[1].get_loc())) # DEBUG
-
-  return hits, nearest_guesses
-
-    
-#----------------------------------------------------------------------------------------------------------------------
-# edge_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def edge_sweep(log, hits, nearest_guesses, filesize, times):
-  """Searches the log file up from the lower guess and down from the higher for the bounds of the desired log entries.
-
-  Inputs:
-    log             - opened log file
-    hits            - any exact matches from previous search methods (LogLocation)
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    filesize        - size of log
-    times           - Should be a list of size two with the min and max datetimes. Format: [min, max]
-
-  Updates in place:
-    hits
-    nearest_guesses
-
-  Returns: Nothing
-
-  Raises:  
-    NotFound - desired range does not exist
-  """
-  # Find the extenses of the range. Range could still be fucking gigabytes! Which would take a while to print...
-
-  # Now we do the edge finding the incremental way. We take our min & max from nearest_guesses, send them to
-  # optimistic_edge_search to linearly search from that min/max, and process the result to get a better min/max guess or
-  # the actual boundry of the desired log range.
-  done = False
-  looking_for = LOOKING_FOR_BOTH # We want both min and max boundries right now.
-  while not done:
-    for near_guess in nearest_guesses:
-      if near_guess.get_is_boundry():
-        continue # It's already been found. Continue to the other.
-      stats.edge_sweep_loops += 1
-      DBG("ng: %s" % near_guess) # DEBUG
-      result = optimistic_edge_search(log, near_guess, looking_for, times, filesize)
-
-      # DEBUG
-      if config.DEBUG:
-        if result.get_minmax() == LogLocation.OUT_OF_RANGE_LOW:
-          print "< ",  # DEBUG
-        elif result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
-          print "> ",  # DEBUG
-        else:
-          print "? ",  # DEBUG
-        print result  # DEBUG
-
-      update_guess(result, nearest_guesses) # updates nearest_guesses in place
-      if result.get_is_min():
-#        DBG("found min! %s" % result.get_time()) # DEBUG
-        # Found the lower boundry. Switch to looking for upper or neither, depending.
-        looking_for = LOOKING_FOR_MAX if looking_for == LOOKING_FOR_BOTH else LOOKING_FOR_NEITHER
-      elif result.get_is_max():
-#        DBG("found max! %s" % result.get_time()) # DEBUG
-        # Found the upper boundry. Switch to looking for lower or neither, depending.
-        looking_for = LOOKING_FOR_MIN if looking_for == LOOKING_FOR_BOTH else LOOKING_FOR_NEITHER
-
-    DBG(nearest_guesses ) # DEBUG
-
-    if looking_for == LOOKING_FOR_NEITHER:
-      done = True
+    Returns: Nothing
   
-  # Should never be true unless someone fucks up optimistic_edge_search or update_guess.
-  if not nearest_guesses[0].get_is_boundry() or not nearest_guesses[1].get_is_boundry():
-    DBG("NOT FOUND!!!!") # DEBUG
-    raise NotFound("Desired logs not found.", times, nearest_guesses)
-
-  DBG(nearest_guesses) # DEBUG
-
-
-#----------------------------------------------------------------------------------------------------------------------
-# refocus
-#----------------------------------------------------------------------------------------------------------------------
-def refocus(nearest_guesses, focus, for_min):
-  """Moves the search focal point away from the original focus.
-
-  If searching right on the focus doesn't work, call this function to move the focus out towards the min or max.
-  It will move it by config.
-
-  Inputs:
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    focus           - location in file intended to focus search
-    for_min         - True if this guess should be for min, False otherwise
-
-  Returns:
-    int - refocused focal point
-
-  Raises: Nothing
-  """
-  rf = 0
-  if for_min:
-    # focus - nearest_guesses[0] == distance into region
-    # 1 - REFOCUS_FACTOR == percent into region desired to refocus to
-    # add back nearest_guesses[0] to get refocused distance from beginning of file
-    rf = (focus - nearest_guesses[0].get_loc()) * (1 - config.REFOCUS_FACTOR) + nearest_guesses[0].get_loc()
-  else:
-    rf = (nearest_guesses[1].get_loc() - focus) * config.REFOCUS_FACTOR + nearest_guesses[0].get_loc()
-
-  DBG("rf: %7.3f" % rf) # DEBUG
-  return int(rf)
-
-#----------------------------------------------------------------------------------------------------------------------
-# binary_search_guess
-#----------------------------------------------------------------------------------------------------------------------
-def binary_search_guess(nearest_guesses, desired, log_timestamps, filesize, for_min):
-  """Straight up regular binary search calculation.
-
-  Inputs:
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    desired         - [IGNORED]
-    log_timestamps  - [IGNORED]
-    filesize        - [IGNORED]
-    for_min         - [IGNORED]
-
-  Returns:
-    int - point in file to seek to next search
-
-  Raises: Nothing
-  """
-  # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
-  focus = ((nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc()) / 2) + nearest_guesses[0].get_loc()
-  return focus
-
-#----------------------------------------------------------------------------------------------------------------------
-# time_search_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def time_search_guess(nearest_guesses, desired, log_timestamps, filesize, for_min):
-  """Time-adjusted binary (TAB) search calculation. Considers times supplied as well. 
-
-  Inputs:
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    desired         - datetime we're looking for in the log
-    log_timestamps  - [start, end] of the file in datetimes
-    filesize        - size of log
-    for_min         - True if this guess should be for min, False otherwise
-
-  Returns:
-    int - point in file to seek to next search
-
-  Raises: Nothing
-  """
-  SECONDS_PER_DAY = 86400
-  # For now, we assume last_timestamp() got called.
-  #if nearest_guesses[1].get_time() == datetime.max:
-  #  # haven't hit any actual point in the file, yet, so max guess is at default value.
-  #  pass
-
-  # Let's do a little math. Let:
-  #  r = lowest  guess in nearest_guesses (datetime)
-  #  e = highest guess in nearest_guesses (datetime)
-  #  d = desired time (datetime)
-  #  d = desired time (datetime)
-  #  i = lowest  guess location in log file
-  #  t = highest guess location in log file
-  #
-  # (x - y) is the time between two datetime objects (i.e. (r - e), (d - r) or (e - d)). Datetime math results in a
-  # timedelta object, so we have to convert this to an integer.
-  #  j = x - y (timedelta)
-  #  o = j.days * SECONDS_PER_DAY
-  #  b = o + j.seconds
-  #
-  # Let:
-  #  p = b of (r - e) (start to end seconds)
-  #  l = b of (d - r) (start to desired seconds)
-  #  z = b of (e - d) (desired to end seconds)
-  # 
-  # Now, after calculating the number of seconds, we must find the percentage of the way through the region that d
-  # is. We then use this time percentage to calculate the percentage in bytes with an assumption, quite simply, that
-  # time % == bytes %. Add this 'bytes into the region' to i, and you get the estimated location of the time. <FIX WITH
-  # MAX's BYTES PER SEC STUFF>
-  #  K = (l / p)
-  #  T = 1 - (z / p) 
-  #  H = (K * (t-i)) + i (the answer for min)
-  #  X = (K * (t-i)) + i + bytes_per_sec (the answer for max, one second worth of bytes above min's answer)
-
-  low_j  = desired - nearest_guesses[0].get_time()
-  high_j = nearest_guesses[1].get_time() - desired
-  total_j  = nearest_guesses[1].get_time() - nearest_guesses[0].get_time()
-#  DBG("    r: %s" % nearest_guesses[0].get_time()) # DEBUG
-#  DBG("    d: %s" % desired) # DEBUG
-#  DBG("    e: %s" % nearest_guesses[1].get_time()) # DEBUG
-#  DBG("   lj: %s: %3d, %6d" % (low_j,  low_j.days,  low_j.seconds)) # DEBUG
-#  DBG("   hj: %s: %3d, %6d" % (high_j, high_j.days, high_j.seconds)) # DEBUG
-#  DBG("   tj: %s: %3d, %6d" % (total_j, total_j.days, total_j.seconds)) # DEBUG
-
-  # If asked for a time before or after the file, the following would faithfully calculate how far away that is, so
-  # here's a good place to stop and check our boundries.
-  zero_td = timedelta(0)
-  low_j  = zero_td if low_j  < zero_td else low_j
-  high_j = zero_td if high_j < zero_td else high_j
-  low_j  = total_j if low_j  > total_j else low_j
-  high_j = total_j if high_j > total_j else high_j
-
-  ob = lambda foo: foo.days * SECONDS_PER_DAY + foo.seconds
-
-  BYTES_PER_SEC = filesize / float(ob(log_timestamps[1] - log_timestamps[0])) * config.BYTES_PER_SECOND_FUDGE_FACTOR
-  DBG("   BPS: %6d" % BYTES_PER_SEC) # DEBUG
-
-  p = ob(total_j)
-  l = ob(low_j)
-  z = ob(high_j)
-#  DBG("     p: %6d" % p) # DEBUG
-#  DBG("     l: %6d" % l) # DEBUG
-#  DBG("     z: %6d" % z) # DEBUG
-
-#  KTH = ((l / float(p)) + (1 - (z / float(p)))) / 2 # //! not used anymore
-  K = l / float(p)
-  DBG("     K: %7.3f" % (l / float(p))) # DEBUG
-  DBG("     T: %7.3f" % (1 -  (z / float(p)))) # DEBUG
-#  DBG(" %%KTH: %7.3f" % KTH) # DEBUG //! not used anymore
-
-  H = (K * (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc())) + nearest_guesses[0].get_loc()
-  X = (K * (nearest_guesses[1].get_loc() - nearest_guesses[0].get_loc())) + nearest_guesses[0].get_loc() + BYTES_PER_SEC
-#  print "    X: %7.3f" % X
-
+    Raises:  Nothing
   
-  return int(H) if for_min else int(X)
-
-#----------------------------------------------------------------------------------------------------------------------
-# first_timestamp: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def first_timestamp(log):
-  """Reads the beginning of the file to find the first timestamp.
-
-  Inputs:
-    log - opened log file
-
-  Returns:
-    datetime - first timestamp in file
-
-  Raises: 
-    NotTime - parse_time had error parsing string into datetime
-  """
-  if log.tell() != 0:
-    log.seek(0) # please please please don't make me seek...
-  chunk = log.read(config.LOG_TIMESTAMP_SIZE) # Just need barely enough to get the whole timestamp from the first line.
-#  DBG(chunk) # DEBUG
-  stats.reads += 1
-
-  # get the datetime
-  return parse_time(chunk)
-
-#----------------------------------------------------------------------------------------------------------------------
-# last_timestamp
-#----------------------------------------------------------------------------------------------------------------------
-def last_timestamp(log):
-  """Reads the end of the file to find the last timestamp.
-
-  Inputs:
-    log - opened log file
-
-  Returns:
-    datetime - last timestamp in file
-
-  Raises: 
-    NotTime - parse_time had error parsing string into datetime
-  """
-  log.seek(-config.MORE_THAN_ONE_LINE, os.SEEK_END) # minus sign is important
-  chunk = log.read(config.MORE_THAN_ONE_LINE) # Just need barely enough to get the whole timestamp from the first line.
-
-  nl_index = chunk[:-1].rfind("\n") # file could end with a newline so go back one in the chunk to skip it
-  if nl_index == -1:
-    raise NotTime("Could not find a timestamp at end of log file.", chunk)
-  nl_index += 1 # get past the newline
-
-  stats.reads += 1
-
-  # get the datetime
-  return parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
-
-#----------------------------------------------------------------------------------------------------------------------
-# pessimistic_forward_search
-#----------------------------------------------------------------------------------------------------------------------
-def pessimistic_forward_search(log, seek_loc, times, nearest_guesses, filesize):
-  """Reads only a little and checks only the first timestamp after the first newline. 
-
-  Inputs:
-    log       - opened log file
-    seek_loc  - location to seek to and read
-    times     - Should be a list of size two with the min and max datetimes. Format: [min, max]
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    fillesize -  size of log
-
-  Returns:
-    LogLocation - containing seek_loc, time parsed, and min/max comparision to min/max times in times list
-
-  Raises: 
-    NotTime - parse_time had error parsing string into datetime
-  """
-  log.seek(seek_loc)
-  stats.seeks += 1
-
-  # "More than one line" means it needs a newline and at least LOG_TIMESTAMP_SIZE bytes after that
-  chunk = log.read(config.MORE_THAN_ONE_LINE) 
-  stats.reads += 1
-  at_eof = True if log.tell() == filesize else False # Python, why u no have file.eof?
-
-  # find the nearest newline so we can find the timestamp
-  nl_index = chunk.find("\n")
-  if (nl_index == -1):
-    if at_eof:
-      return nearest_guesses[1]
-    # else let parse throw. We got a corrupt file or something. //! handle better?
-  nl_index += 1 # get past the newline
-
-  # At end of file. Return max nearest_guess.
-  if at_eof and chunk[nl_index:] == '':
-    return nearest_guesses[1]
-
-  # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
-  # send to parse_time to get datetime
-  time = parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
-
-  result = LogLocation(seek_loc + nl_index, time,
-                       logloc.time_cmp(time, times[0]), # how it compares, min
-                       logloc.time_cmp(time, times[1])) # how it compares, max
-  return result
-
-#----------------------------------------------------------------------------------------------------------------------
-# optimistic_edge_search
-#----------------------------------------------------------------------------------------------------------------------
-def optimistic_edge_search(log, guess, looking_for, times, filesize):
-  """Reads a large(r) chunk and checks it for the min or max boundry.
-
-  Inputs:
-    log         - opened log file
-    guess       - A LogLocation to start from for finding an edge.
-    looking_for - LOOKING_FOR_BOTH, LOOKING_FOR_MIN, or LOOKING_FOR_MAX
-    filesize    - size of log
-
-  Returns:
-    LogLocation - better guess, or an actual boundry
-
-  Raises: 
-    InvalidArgument - LOOKING_FOR_NEITHER was passed in
-  """
-
-  if looking_for == LOOKING_FOR_NEITHER:
-    raise InvalidArgument("LOOKING_FOR_NEITHER is not accepted", LOOKING_FOR_NEITHER)
-
-  # DEBUG
-  if config.DEBUG:
-    if looking_for == LOOKING_FOR_NEITHER:
-      print "LOOKING_FOR_NEITHER" # DEBUG
-    if looking_for == LOOKING_FOR_BOTH:
-      print "LOOKING_FOR_BOTH" # DEBUG
-    if looking_for == LOOKING_FOR_MIN:
-      print "LOOKING_FOR_MIN" # DEBUG
-    if looking_for == LOOKING_FOR_MAX:
-      print "LOOKING_FOR_MAX" # DEBUG
-
-  seek_loc = guess.get_loc()
-  if guess.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
-    # we're looking for the max and we're above it, so read from a chunk away up to here.
-    DBG("looking high") # DEBUG
-    DBG("%d %d" % (guess.get_loc(), guess.get_loc() - config.EDGE_SWEEP_CHUNK_SIZE)) # DEBUG
-    seek_loc -= config.EDGE_SWEEP_CHUNK_SIZE
-    seek_loc = 0 if seek_loc < 0 else seek_loc
-    log.seek(seek_loc)
-    stats.seeks += 1
-  else:
-    # we're looking for the min and we're below it, so read starting here.
-    log.seek(seek_loc)
-    stats.seeks += 1
-  chunk = log.read(config.EDGE_SWEEP_CHUNK_SIZE)
-  stats.reads += 1
-  at_eof = True if log.tell() == filesize else False # Python, why u no have file.eof?
-
-  prev_minmax = guess.get_minmax()
-  result = LogLocation(0, datetime.min,
-                       LogLocation.TOO_LOW,
-                       LogLocation.TOO_HIGH) # an invalid result to start with
-  chunk_loc = 0
-  end_loc   = chunk.rfind('\n')
-  nl_index  = chunk_loc # index into chunk[chunk_loc:] of the newline we're looking for current loop
-  while chunk_loc < end_loc:
-    DBG("%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc)) # DEBUG
+    Prints:  Logs
+    """
+    self.filesize = os.path.getsize(self.log_path)
+    stats.file_size = pretty_size(self.filesize)
+  
     try:
-      # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
-      # send to parse_time to get datetime
-      time = parse_time(chunk[chunk_loc : chunk_loc + config.LOG_TIMESTAMP_SIZE])
-      DBG(time) # DEBUG
-      DBG(times) # DEBUG
-
-      # start building result
-      result.set_loc(seek_loc + chunk_loc)
-      result.set_time(time)
-
-      # compare to desired to see if it's a better max
-      if time > times[1]:
-        DBG("time > max") # DEBUG
-        result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
-      elif time == times[1]:
-        DBG("time == max") # DEBUG
-        # do nothing for now about this match, may optimize to save it off later.
-        result.set_rel_to_max(LogLocation.MATCH)
-      else: # time < times[1]
-        DBG("time < max") # DEBUG
-        result.set_rel_to_max(LogLocation.TOO_LOW)
- 
-      # compare to desired to see if it's a better min
-      if time < times[0]:
-        DBG("time < min") # DEBUG
-        result.set_rel_to_min(LogLocation.TOO_LOW)
-      elif time == times[0]:
-        DBG("time == min") # DEBUG
-        # do nothing for now about this match, may optimize to save it off later.
-        result.set_rel_to_min(LogLocation.MATCH)
-      else: # time > times[0]
-        DBG("time > min") # DEBUG
-        result.set_rel_to_min(LogLocation.TOO_HIGH)
-
-      # We jumped entirely over the range in one line. There is no spoon.
-      if (prev_minmax == LogLocation.OUT_OF_RANGE_LOW) and (result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH):
-        raise NotFound("Desired logs not found.", times, guess)
-
-#      DBG(result.get_minmax()) # DEBUG
-
-      # see if the result's a min or max bondry
-      if (looking_for == LOOKING_FOR_MIN) or (looking_for == LOOKING_FOR_BOTH):
-        if (prev_minmax[0] == LogLocation.TOO_LOW) and (result.get_rel_to_min() != LogLocation.TOO_LOW):
-          # We passed into our range via min. This is one.
-          result.set_is_min(True)
-          break
-      elif (looking_for == LOOKING_FOR_MAX) or (looking_for == LOOKING_FOR_BOTH):
-        # check to see if it's the edge
-        if (prev_minmax[1] != LogLocation.TOO_HIGH) and (result.get_rel_to_max() == LogLocation.TOO_HIGH):
-          # We passed out of range. This loc is where we want to /stop/ reading. Save it!
-          result.set_is_max(True)
-          break
-
-      # Check to see if we can short-circuit this loop due to already being too high
-      if result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
-        break
-
-      prev_minmax = result.get_minmax()
-      # find the next newline so we can find the next timestamp
-      nl_index = chunk[chunk_loc:].find('\n')
-      if nl_index == -1:
-#        DBG("can't find new line") # DEBUG
-        break # Can't find a newline; we're done.
-      chunk_loc += nl_index + 1 # +1 to get past newline char
-    except NotTime: # not a time string found
-#      DBG("time parse error") # DEBUG
-      # we're ok with occasional non-time string lines. Might start the read in the middle of a line, for example.
-      # find the next newline so we can find the next timestamp
-
-      # We errored, so find the next newline...
-      nl_index = chunk[chunk_loc:].find('\n')
-      if nl_index == -1:
-#        DBG("can't find new line") # DEBUG
-        break # Can't find a newline; we're done.
-      chunk_loc += nl_index + 1 # +1 to get past newline char
+      end   = None
+      start = datetime.now()
+      # open 'rb' to avoid a bug in file.tell() in windows when file has unix line endings, even though I can't test in
+      # windows, and have nyo idea if the rest will work there.
+      with open(self.log_path, 'rb') as self.log: 
+        self.log_timestamps = [self.first_timestamp(), self.last_timestamp()]
+        DBG("first: %s" % self.log_timestamps[0]) # DEBUG
+        DBG("last:  %s" % self.log_timestamps[1]) # DEBUG
+     
+        # DEBUG - These are for loggen.log
+        # Feb 13 23:33 (whole minute)
+  #      all_times = [[datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]]
+        # Feb 13 23:33:11 (one log line)
+  #      all_times = [[datetime(2011, 2, 13, 23, 33, 11), datetime(2011, 2, 13, 23, 33, 11)]]
+        # Feb 14 07:07:39 (End of File, exactly one line)
+  #      all_times = [[datetime(2011, 2, 14, 7, 7, 39), datetime(2011, 2, 14, 7, 7, 39)]]
+        # Feb 14 07:07:39 (End of File, chunk)
+  #      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 7, 39)]]
+        # Feb 14 07:07:39 (End of File, chunk, no exact matches)
+  #      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 9, 0)]]
+        # Feb 13 18:31:30 (Start of File, exactly one line)
+  #      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 31, 30)]]
+        # Feb 13 18:31:30 (Start of File, chunk)
+  #      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]]
+        # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
+  #      all_times = [[datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]]
+        # NO MATCH!
+  #      all_times = [[datetime(2011, 2, 14, 1, 3, 0), datetime(2011, 2, 14, 1, 3, 0)]]
+        # NO MATCH Feb 13 18:31:30 (before Start of File)
+  #      all_times = [[datetime(2011, 2, 13, 4, 31, 30), datetime(2011, 2, 13, 17, 31, 30)]]
+     
+        requested_times = self.input_time_parse(self.input_time, self.log_timestamps[0])
+        stats.requested_times = requested_times
+        DBG(requested_times) # DEBUG
+     
+  #      DBG("at: %s" % all_times) # DEBUG
+        all_times = self.time_check(requested_times)
+        DBG("at: %s" % all_times) # DEBUG
+        if all_times == []:
+          print >>sys.stderr, "No matches for requested time in file."
+          print >>sys.stderr, "input:            %s"   % str(self.input_time)
+          print >>sys.stderr, "file start:       %s"   % str(self.log_timestamps[0])
+          print >>sys.stderr, "file end:         %s\n" % str(self.log_timestamps[1])
+          return
   
-  ###
-  # Edge Cases
-  ###
+        for times in all_times:
+     
+          # Jump around the file in binary time-based fashion first
+          DBG("\n\nwide sweep") # DEBUG
+          sweep_start = datetime.now()
+          self.hits, self.boundaries = self.wide_sweep(times, search_type)
+          sweep_end = datetime.now()
+          stats.wide_sweep_time = sweep_end - sweep_start
+          stats.wide_sweep_end_locs.append(deepcopy(self.boundaries))
+      
+          # Now that we're close, find the edges of the desired region of the log in linear fashion
+          DBG("\n\nedge sweep") # DEBUG
+          sweep_start = datetime.now()
+          self.edge_sweep(times) # updates self.boundaries, so no return
+          sweep_end = datetime.now()
+          stats.edge_sweep_time = sweep_end - sweep_start
 
-  # if we read to the end of our LOOKING_FOR_MAX chunk, and don't find the in range or match -> too high edge,
-  # then the_guess max IS the boundry max.
-  if not result.get_is_boundry() and (looking_for == LOOKING_FOR_MAX) and (chunk_loc == end_loc):
-    result.set_loc(guess.get_loc())
-    result.set_time(guess.get_time())
-    result.set_minmax(guess.get_rel_to_min(), guess.get_rel_to_max())
-    result.set_is_max(True)
+          # self.boundaries is now the bounds of the region-to-print, not the bounds of the search.
+      
+          # Figure out how much time searching took.
+          end = datetime.now()
+          DBG("\n\n") # DEBUG
+          stats.find_time = end - start
+      
+          stats.final_locs.append(self.boundaries)
+          start = datetime.now()
 
-  # if we read a chunk at the end of the file, searched through that, and didn't come up with a min or max,
-  # set the max to eof.
-  if not result.get_is_boundry() and at_eof and ((looking_for == LOOKING_FOR_MAX) or (looking_for == LOOKING_FOR_BOTH)):
-    result.set_loc(seek_loc + len(chunk))
-    result.set_time(time)
-    result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
-    result.set_is_max(True)
-
-  # If we're only looking for the min, and we hit eof and didn't find it... Well, it's not there, man. Sorry.
-  if not result.get_is_min() and at_eof and (looking_for == LOOKING_FOR_MIN):
-    result.set_loc(seek_loc + len(chunk))
-    result.set_time(time)
-    result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
-    result.set_is_min(True)
-
-#  DBG(result) # DEBUG
-  return result
-
-#----------------------------------------------------------------------------------------------------------------------
-# parse_time: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def parse_time(time_str):
-  """Tries to parse string into a datetime object.
-
-  Inputs:
-    time_str - timestamp from log, formatted like: "Feb 13 18:31:36". Will ignore extra junk at end.
-
-  Returns:
-    datetime - datetime representation of time_str, set to the current year
-
-  Raises:
-    NotTime - error parsing string into datetime
-  """
-  # split the string on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
-  # join the first three back together again with ' ' as the seperator
-  # parse the thing!
-  just_timestamp = ' '.join(time_str.split()[:config.LOG_TIMESTAMP_PARTS])
-
-  # parse with the illustrious strptime
-  try:
-    return datetime.strptime(just_timestamp + str(datetime.now().year), "%b %d %H:%M:%S%Y")
-  except ValueError:
-    raise NotTime("Could not parse timestamp.", time_str)
-
-#----------------------------------------------------------------------------------------------------------------------
-# update_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def update_guess(guess, nearest_guesses):
-  """Updates the nearest_guesses list based on the guess.
-
-  Inputs:
-    nearest_guesses - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
-    guess           - A LogLocation that may or may not be better than the current guesses.
-
-  Updates in place:
-    nearest_guesses
-
-  Returns: 
-    Boolean - True if nearest_guesses improved, otherwise False
-
-  Raises:  Nothing
-  """
-  improved = False
-
-  if guess.get_is_min() == True: # set to min 'guess' if it's the Real Actual min boundry
-    nearest_guesses[0] = guess
-    improved = True
-
-  elif guess.get_is_max() == True: # set to max 'guess' if it's the Real Actual max boundry
-    nearest_guesses[1] = guess
-    improved = True
-
-  elif guess.get_rel_to_min() == LogLocation.TOO_LOW: # not far enough
-    # Compare with min, replace if bigger
-    if guess.get_loc() > nearest_guesses[0].get_loc():
-      nearest_guesses[0] = guess
-      improved = True
-
-  elif guess.get_rel_to_max() == LogLocation.TOO_HIGH: # too far
-    # Compare with max, replace if smaller
-    if guess.get_loc() < nearest_guesses[1].get_loc():
-      nearest_guesses[1] = guess
-      improved = True
-
-  return improved
-
-#----------------------------------------------------------------------------------------------------------------------
-# expected_size: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def expected_size(min_time, max_time):
-  """Calculates the expected size of a region in the log based on the supplied times and config params.
-
-  Inputs:
-    min_time - smaller datetime 
-    max_time - bigger  datetime 
-
-  Returns:
-    int - expected number of bytes that amount of time would fill in the log assuming max load
-
-  Raises:  Nothing
-  """
-  # //! Use me somewhere! :(
-  time_range = max_time - min_time
-  seconds = time_range.days * 86400 + time_range.seconds # We're ignoring microseconds.
-
-  expected_bytes = config.APPROX_MAX_LOGS_PER_SEC * config.LOGS_PER_SEC_FUDGE_FACTOR * config.AVG_LOG_SIZE * seconds
-  return int(expected_bytes)
-
-#----------------------------------------------------------------------------------------------------------------------
-# print_log_lines: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
-#----------------------------------------------------------------------------------------------------------------------
-def print_log_lines(log, bounds, writable=sys.stdout):
-  """Prints to stdout the range of the log indicated by bounds.
-
-  Inputs:
-    log      - opened log file
-    bounds   - List in form [min, max] of the bounds of LogLocation entries
-    writable - writable object to print output to
-
-  Returns: Nothing
-
-  Raises:  Nothing
-  """
-  start_loc = bounds[0].get_loc()
-  log.seek(start_loc)
-  stats.seeks += 1
-
-  end_loc = bounds[1].get_loc()
-
-  # Print out the logs in question in chunks, so that we don't use too much memory.
-  curr = start_loc
-  while curr < end_loc:
-    # only print up to the end of our range
-    chunk_size = 0
-    if curr + config.MAX_PRINT_CHUNK_SIZE <= end_loc:
-      chunk_size = config.MAX_PRINT_CHUNK_SIZE
+          # Now, on to printing!
+          self.print_log_lines()
+      
+          # Figure out how much time printing took.
+          end = datetime.now()
+          stats.print_time = end - start
+          
+          if (len(all_times) > 1) and (config.DOUBLE_MATCH_SEP != ''):
+            print config.DOUBLE_MATCH_SEP
+  
+    # Beautify some errors, but keep it debug friendly.
+    except NotTime as err:
+      print >>sys.stderr, "Timestamp parser had a bit of trouble...\n"
+      print >>sys.stderr, err
+  
+      if config.DEBUG:
+        print "\n"
+        raise
+    except NotFound as err:
+      print >>sys.stderr, "No match for '%s' time range in log file.\n" % self.input_time
+      print >>sys.stderr, err
+  
+      if config.DEBUG:
+        print "\n"
+        raise
+    except RegexError as err:
+      print >>sys.stderr, "Regex trouble. The regex for parsing input time got an unexpected number of matches.\n"
+      print >>sys.stderr, err
+  
+      if config.DEBUG:
+        print "\n"
+        raise
+    except IOError as err:
+      print >>sys.stderr, "Trouble reading or opening file.\n"
+      print >>sys.stderr, err
+  
+      if config.DEBUG:
+        print "\n"
+        raise
+    
+  
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # time_check: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def time_check(self, times):
+    """Determines if times are valid for supplied self.log_timestamps.
+  
+    Since no day is supplied on the command line, there could be a double match in the file: one on the first day and
+    one on the second. If so, this
+  
+    Inputs:
+      times       - Should be a list of size two with the low and high times requeted.
+  
+    Returns: 
+      list - a list of 'times' lists. Could be just [times]. Might be [times, [times[0]+a_day, times[1]+a_day]].
+  
+    Raises: Nothing
+    """
+    times_plus = [times[0].replace(day=times[0].day+1), times[1].replace(day=times[1].day+1)]
+    all_times = [times, times_plus]
+    DBG("times: %s" % times     ) # DEBUG
+    DBG("+1day: %s" % times_plus) # DEBUG
+    DBG(" file: %s" % self.log_timestamps)
+  
+    result = []
+    for tlist in all_times:
+      if (self.log_timestamps[0] <= tlist[0] <= self.log_timestamps[1]) or \
+           (self.log_timestamps[0] <= tlist[1] <= self.log_timestamps[1]):
+        result.append(tlist)
+  
+    DBG(result) # DEBUG
+    return result
+    
+  
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # wide_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def wide_sweep(self, times, search_type):
+    """Binary search of log file, with time-based adjustment, to get min/max guesses close to the range.
+  
+    Inputs:
+      times          - Should be a list of size two with the min and max datetimes. Format: [min, max]
+      search_type    - True: use binary_search_guess; False: use time_search_guess
+  
+    Returns: 
+      (LogLocation a, [LogLocation, LogLocation]) tuple
+        a    - any exact matches from previous search methods
+        list - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+  
+    Raises: Nothing
+    """
+    # binary search, with friends!
+    search_func = None
+    if search_type:
+  #    DBG("BINARY search!") # DEBUG
+      search_func = self.binary_search_guess
     else:
-      chunk_size = end_loc - curr
+  #    DBG("TIME search!") # DEBUG
+      search_func = self.time_search_guess
+  
+    # start min guess way too low, and max guess way too high. Just to prime the pump.
+    too_high_time = self.log_timestamps[1].replace(second=self.log_timestamps[1].second + 1)
+    self.boundaries = [LogLocation(0,             self.log_timestamps[0], LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
+                       LogLocation(self.filesize, too_high_time,          LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
+    focus = 0 # where we'll jump to for the text search
+    hits  = [] # any exact matches to min or max we happen upon along the way
+    done = False
+    is_min_guess = False # toggle
+    bad_results = [0, 0]
+    # binary time-based search until focal point comes up the same twice or we're close enough as per config param
+    while not done:
+      for time in times:
+        is_min_guess = not is_min_guess # toggle 
+        if bad_results[0 if is_min_guess else 1] > config.WIDE_SWEEP_MAX_RANGE_HITS:
+          if bad_results[1 if is_min_guess else 0] > config.WIDE_SWEEP_MAX_RANGE_HITS: # note the 0 & 1 swap
+            # If we've gotten both wrong too much, give up.
+            done = True
+            break
+          # If we've gotten this guess wrong too much, just skip it.
+          continue
+  
+        stats.wide_sweep_loops += 1
+        if bad_results[0 if is_min_guess else 1]:
+          stats.refocused_wide_sweep_loops += 1
+  
+        # time_search_guess, probably. Maybe binary_search_guess.
+        focus = search_func(time, is_min_guess)
+        DBG("focus: %10d" % focus) # DEBUG
+        if bad_results[0 if is_min_guess else 1]:
+          focus = self.refocus(focus, is_min_guess)
+        DBG("focus: %10d" % focus) # DEBUG
+        DBG("binary: %d" % self.binary_search_guess(time, is_min_guess)) # DEBUG
+        DBG("time:   %d" % focus) # DEBUG
+  
+        try:
+          if isinstance(focus, float):
+            DBG("FOCUS IS FLOAT!!!") # DEBUG
 
-    chunk = log.read(chunk_size)
+          # check focus for timestamp
+          result = self.pessimistic_forward_search(focus, times) 
+          good_result = self.update_guess(result) # updates self.boundaries in place
+        except NotTime:
+          # something went wrong... dunno what, but we couldn't parse a timestamp from that location.
+          good_result = False
+  
+        if LogLocation.MATCH in result.get_minmax():
+          DBG("found it!") # DEBUG
+          hits.append(result)
+  
+        DBG(result) # DEBUG
+        DBG(good_result) # DEBUG
+  
+        if not good_result and is_min_guess:
+          bad_results[0] += 1
+        elif not good_result and not is_min_guess:
+          bad_results[1] += 1
+  
+  #      DBG("bad low: %d" % bad_results[0] ) # DEBUG
+  #      DBG("bad high: %d" % bad_results[1]) # DEBUG
+        DBG(self.boundaries) # DEBUG
+     
+        # check if we can quit yet
+        if (self.boundaries[1].get_loc() - self.boundaries[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
+          DBG("close enough!") # DEBUG
+          done = True # exit while
+          break # exit for
+        DBG("") # DEBUG
+    
+    DBG(hits) # DEBUG
+    DBG(self.boundaries) # DEBUG
+    DBG((self.boundaries[1].get_loc() - self.boundaries[0].get_loc(), 
+         self.boundaries[0].get_loc(), self.boundaries[1].get_loc())) # DEBUG
+  
+    return hits, self.boundaries
+  
+      
+  #--------------------------------------------------------------------------------------------------------------------
+  # edge_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def edge_sweep(self, times):
+    """Searches the log file up from the lower guess and down from the higher for the bounds of the desired log entries.
+  
+    Inputs:
+      times           - Should be a list of size two with the min and max datetimes. Format: [min, max]
+  
+    Updates in place:
+      self.hits       - any exact matches from previous search methods (LogLocation)
+      self.boundaries - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+  
+    Returns: Nothing
+  
+    Raises:  
+      NotFound - desired range does not exist
+    """
+    # Find the extenses of the range. Range could still be fucking gigabytes! Which would take a while to print...
+  
+    # Now we do the edge finding the incremental way. We take our min & max from self.boundaries, send them to
+    # optimistic_edge_search to linearly search from that min/max, and process the result to get a better min/max guess
+    # or the actual boundry of the desired log range.
+    done = False
+    looking_for = self.LOOKING_FOR_BOTH # We want both min and max boundries right now.
+    while not done:
+      for near_guess in self.boundaries:
+        if near_guess.get_is_boundry():
+          continue # It's already been found. Continue to the other.
+        stats.edge_sweep_loops += 1
+        DBG("ng: %s" % near_guess) # DEBUG
+        result = self.optimistic_edge_search(near_guess, looking_for, times)
+  
+        # DEBUG
+        if config.DEBUG:
+          if result.get_minmax() == LogLocation.OUT_OF_RANGE_LOW:
+            print "< ",  # DEBUG
+          elif result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
+            print "> ",  # DEBUG
+          else:
+            print "? ",  # DEBUG
+          print result  # DEBUG
+  
+        self.update_guess(result) # updates self.boundaries in place
+        if result.get_is_min():
+  #        DBG("found min! %s" % result.get_time()) # DEBUG
+          # Found the lower boundry. Switch to looking for upper or neither, depending.
+          looking_for = self.LOOKING_FOR_MAX if looking_for == self.LOOKING_FOR_BOTH else self.LOOKING_FOR_NEITHER
+        elif result.get_is_max():
+  #        DBG("found max! %s" % result.get_time()) # DEBUG
+          # Found the upper boundry. Switch to looking for lower or neither, depending.
+          looking_for = self.LOOKING_FOR_MIN if looking_for == self.LOOKING_FOR_BOTH else self.LOOKING_FOR_NEITHER
+  
+      DBG(self.boundaries) # DEBUG
+  
+      if looking_for == self.LOOKING_FOR_NEITHER:
+        done = True
+    
+    # Should never be true unless someone fucks up optimistic_edge_search or update_guess.
+    if not self.boundaries[0].get_is_boundry() or not self.boundaries[1].get_is_boundry():
+      DBG("NOT FOUND!!!!") # DEBUG
+      raise NotFound("Desired logs not found.", times, self.boundaries)
+  
+    DBG(self.boundaries) # DEBUG
+  
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # refocus
+  #--------------------------------------------------------------------------------------------------------------------
+  def refocus(self, focus, for_min):
+    """Moves the search focal point away from the original focus.
+  
+    If searching right on the focus doesn't work, call this function to move the focus out towards the min or max.
+    It will move it by config.
+  
+    Inputs:
+      focus           - location in file intended to focus search
+      for_min         - True if this guess should be for min, False otherwise
+  
+    Returns:
+      int - refocused focal point
+  
+    Raises: Nothing
+    """
+    rf = 0
+    if for_min:
+      # focus - self.boundaries[0] == distance into region
+      # 1 - REFOCUS_FACTOR == percent into region desired to refocus to
+      # add back self.boundaries[0] to get refocused distance from beginning of file
+      rf = (focus - self.boundaries[0].get_loc()) * (1 - config.REFOCUS_FACTOR) + self.boundaries[0].get_loc()
+    else:
+      rf = (self.boundaries[1].get_loc() - focus) * config.REFOCUS_FACTOR + self.boundaries[0].get_loc()
+  
+    DBG("rf: %7.3f" % rf) # DEBUG
+    return int(rf)
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # binary_search_guess
+  #--------------------------------------------------------------------------------------------------------------------
+  def binary_search_guess(self, desired, for_min):
+    """Straight up regular binary search calculation.
+
+    Must maintain input parity with other *_search_guess functions.
+  
+    Inputs:
+      desired - [IGNORED]
+      for_min - [IGNORED]
+  
+    Returns:
+      int - point in file to seek to next search
+  
+    Raises: Nothing
+    """
+    # ((max - min) / 2) to split the difference, then (that + min) to get in between min and max
+    focus = ((self.boundaries[1].get_loc() - self.boundaries[0].get_loc()) / 2) + self.boundaries[0].get_loc()
+    return focus
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # time_search_guess
+  #--------------------------------------------------------------------------------------------------------------------
+  def time_search_guess(self, desired, for_min):
+    """Time-adjusted binary (TAB) search calculation. Considers times supplied as well. 
+  
+    Must maintain input parity with other *_search_guess functions.
+  
+    Inputs:
+      desired         - datetime we're looking for in the log
+      for_min         - True if this guess should be for min, False otherwise
+  
+    Returns:
+      int - point in file to seek to next search
+  
+    Raises: Nothing
+    """
+    SECONDS_PER_DAY = 86400
+    # For now, we assume last_timestamp() got called.
+    #if self.boundaries[1].get_time() == datetime.max:
+    #  # haven't hit any actual point in the file, yet, so max guess is at default value.
+    #  pass
+  
+    # Let's do a little math. Let:
+    #  r = lowest  guess in self.boundaries (datetime)
+    #  e = highest guess in self.boundaries (datetime)
+    #  d = desired time (datetime)
+    #  d = desired time (datetime)
+    #  i = lowest  guess location in log file
+    #  t = highest guess location in log file
+    #
+    # (x - y) is the time between two datetime objects (i.e. (r - e), (d - r) or (e - d)). Datetime math results in a
+    # timedelta object, so we have to convert this to an integer.
+    #  j = x - y (timedelta)
+    #  o = j.days * SECONDS_PER_DAY
+    #  b = o + j.seconds
+    #
+    # Let:
+    #  p = b of (r - e) (start to end seconds)
+    #  l = b of (d - r) (start to desired seconds)
+    #  z = b of (e - d) (desired to end seconds)
+    # 
+    # Now, after calculating the number of seconds, we must find the percentage of the way through the region that d
+    # is. We then use this time percentage to calculate the percentage in bytes with an assumption, quite simply, that
+    # time % == bytes %. Add this 'bytes into the region' to i, and you get the estimated min location of the time. For
+    # the estimated max answer, you must also add the estimated bytes per second.
+    # MAX's BYTES PER SEC STUFF>
+    #  K = (l / p)
+    #  T = 1 - (z / p) 
+    #  H = (K * (t-i)) + i (the answer for min)
+    #  X = (K * (t-i)) + i + bytes_per_sec (the answer for max, one second worth of bytes above min's answer)
+  
+    low_j  = desired - self.boundaries[0].get_time()
+    high_j = self.boundaries[1].get_time() - desired
+    total_j  = self.boundaries[1].get_time() - self.boundaries[0].get_time()
+  #  DBG("    r: %s" % self.boundaries[0].get_time()) # DEBUG
+  #  DBG("    d: %s" % desired) # DEBUG
+  #  DBG("    e: %s" % self.boundaries[1].get_time()) # DEBUG
+  #  DBG("   lj: %s: %3d, %6d" % (low_j,  low_j.days,  low_j.seconds)) # DEBUG
+  #  DBG("   hj: %s: %3d, %6d" % (high_j, high_j.days, high_j.seconds)) # DEBUG
+  #  DBG("   tj: %s: %3d, %6d" % (total_j, total_j.days, total_j.seconds)) # DEBUG
+  
+    # If asked for a time before or after the file, the following would faithfully calculate how far away that is, so
+    # here's a good place to stop and check our boundries.
+    zero_td = timedelta(0)
+    low_j  = zero_td if low_j  < zero_td else low_j
+    high_j = zero_td if high_j < zero_td else high_j
+    low_j  = total_j if low_j  > total_j else low_j
+    high_j = total_j if high_j > total_j else high_j
+  
+    ob = lambda foo: foo.days * SECONDS_PER_DAY + foo.seconds
+  
+    BYTES_PER_SEC = self.filesize / float(ob(self.log_timestamps[1] - self.log_timestamps[0])) * \
+        config.BYTES_PER_SECOND_FUDGE_FACTOR
+    DBG("   BPS: %6d" % BYTES_PER_SEC) # DEBUG
+  
+    p = ob(total_j)
+    l = ob(low_j)
+    z = ob(high_j)
+  #  DBG("     p: %6d" % p) # DEBUG
+  #  DBG("     l: %6d" % l) # DEBUG
+  #  DBG("     z: %6d" % z) # DEBUG
+  
+    K = l / float(p)
+    DBG("     K: %7.3f" % (l / float(p))) # DEBUG
+    DBG("     T: %7.3f" % (1 -  (z / float(p)))) # DEBUG
+  
+    H = (K * (self.boundaries[1].get_loc() - self.boundaries[0].get_loc())) + self.boundaries[0].get_loc()
+    X = (K * (self.boundaries[1].get_loc() - self.boundaries[0].get_loc())) + \
+        self.boundaries[0].get_loc() + BYTES_PER_SEC
+  #  DBG("    H: %7.3f" % H) # DEBUG
+  #  DBG("    X: %7.3f" % X) # DEBUG
+    
+    return int(H) if for_min else int(X)
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # first_timestamp: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def first_timestamp(self):
+    """Reads the beginning of the file to find the first timestamp.
+  
+    Inputs: None
+  
+    Returns:
+      datetime - first timestamp in file
+  
+    Raises: 
+      NotTime - parse_time had error parsing string into datetime
+    """
+    if self.log.tell() != 0:
+      self.log.seek(0) # please please please don't make me seek...
+
+    # Just need barely enough to get the whole timestamp from the first line.
+    chunk = self.log.read(config.LOG_TIMESTAMP_SIZE)
+  #  DBG(chunk) # DEBUG
     stats.reads += 1
-    stats.print_reads += 1
-    curr += chunk_size
   
-    writable.write(chunk) # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
-    stats.print_size += chunk_size
-#    DBG((chunk_size, end_loc - start_loc)) # DEBUG
-#    DBG((start_loc, curr, end_loc)) # DEBUG
-
-#----------------------------------------------------------------------------------------------------------------------
-# arg_time_parse: Parses time from command line args
-#----------------------------------------------------------------------------------------------------------------------
-def arg_time_parse(input, first_time):
-  """Parses time from command line args
-
-  For a specific time, "8:42:04", only that time will be used
-  For a seconds-lacking time, "10:01", that entire minute will be used ("10:01:00" to "10:01:59")
-  For a specific range, "1:2:3-14:15:16", that specific range will be used.
-  For a seconds-lacking range end, "59" will be the seconds. 
-    ("10:01:01-10:04" -> "10:01:01-10:04:59")
-    ("10:01-10:04"    -> "10:01:00-10:04:59")
-
-  Inputs:
-    input      - arg from the command line that might be a time or time range
-    first_time - datetime of first timestamp in the log file
-
-  Returns: 
-    list - [min time, max time] (if one specific time was requested, min and max will be the same)
-
-  Raises:
-    NotTime - The input was not a properly formatted time string.
-    RegexError - The regex went wonky.
-  """
-  time_regex = re.compile(config.TIME_REGEX, re.IGNORECASE) 
-  times = time_regex.findall(input) # returns [(group1, group2)] for my regex
-  if times == []:
-    # Raise the alarm! No regex match!
-#    DBG("NO MATCH!") # DEBUG
-    raise NotTime("This is not in the right format. No regex match.", input)
-  elif 0 < times[0] < 3:
-    # Something's wrong with the regex. Only supposed to get 1 or 2 matches.
-#    DBG("REGEX BUG!") # DEBUG
-    raise RegexError("Something went wrong with the regex.", config.TIME_REGEX, input)
-  retval = []
-  lacking_secs = False
-  for time in times[0]:
-    if time == '':
-      continue # they only passed in one time, not a range
-    lacking_secs = False # when have 2 times, don't care if first lacks seconds
-    arr  = time.split(':')
-    #//! We'll have to roll back the day to whatever the log starts with, + 1 if it's "before" the log starts
-    # (and thus actually the next day). Use timedelta to get around new year's and such.
-    # No, wait. Use first_time. Then replace h:m:s, then roll back if needed.
-    if len(arr) == 2: # no seconds
-      arr.append(0)
-      lacking_secs = True
-    t = first_time.replace(hour=int(arr[0]), minute=int(arr[1]), second=int(arr[2]), microsecond=0)
-    if t < first_time: 
-      # log file spans ~24 hrs, but probably there's the midnight crossing in there somewhere, so a time of 3:00 could
-      # be tomorrow at 3 AM. When we replaced the time, if it is actually a 'tomomrrow' date, it would put us beneath
-      # today's date.
-      t = t + timedelta(days=1)
-    retval.append(t)
+    # get the datetime
+    return self.parse_time(chunk)
   
-  # if only one time was specified, stick a second one in to round out the [min, max] list.
-  if len(retval) == 1:
-    retval.append(retval[0])
+  #--------------------------------------------------------------------------------------------------------------------
+  # last_timestamp
+  #--------------------------------------------------------------------------------------------------------------------
+  def last_timestamp(self):
+    """Reads the end of the file to find the last timestamp.
+  
+    Inputs: None
+  
+    Returns:
+      datetime - last timestamp in file
+  
+    Raises: 
+      NotTime - parse_time had error parsing string into datetime
+    """
+    self.log.seek(-config.MORE_THAN_ONE_LINE, os.SEEK_END) # Minus sign is important. Going back from end.
+    stats.seeks += 1
+    chunk = self.log.read(config.MORE_THAN_ONE_LINE) 
+    stats.reads += 1
+  
+    nl_index = chunk[:-1].rfind("\n") # file could end with a newline so go back one in the chunk to skip it
+    if nl_index == -1:
+      raise NotTime("Could not find a timestamp at end of log file.", chunk)
+    nl_index += 1 # get past the newline
+  
+    # get the datetime
+    return self.parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # pessimistic_forward_search
+  #--------------------------------------------------------------------------------------------------------------------
+  def pessimistic_forward_search(self, seek_loc, times):
+    """Reads only a little and checks only the first timestamp after the first newline. 
+  
+    Inputs:
+      seek_loc  - location to seek to and read
+      times     - Should be a list of size two with the min and max datetimes. Format: [min, max]
+  
+    Returns:
+      LogLocation - containing seek_loc, time parsed, and min/max comparision to min/max times in times list
+  
+    Raises: 
+      NotTime - parse_time had error parsing string into datetime
+    """
+    self.log.seek(seek_loc)
+    stats.seeks += 1
+  
+    # "More than one line" means it needs a newline and at least LOG_TIMESTAMP_SIZE bytes after that
+    chunk = self.log.read(config.MORE_THAN_ONE_LINE) 
+    stats.reads += 1
+    at_eof = True if self.log.tell() == self.filesize else False # Python, why u no have file.eof?
+  
+    # find the nearest newline so we can find the timestamp
+    nl_index = chunk.find("\n")
+    if (nl_index == -1):
+      if at_eof:
+        return self.boundaries[1]
+    nl_index += 1 # get past the newline
+  
+    # At end of file. Return max nearest_guess.
+    if at_eof and chunk[nl_index:] == '':
+      return self.boundaries[1]
+  
+    # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
+    # send to parse_time to get datetime
+    time = self.parse_time(chunk[nl_index : nl_index + config.LOG_TIMESTAMP_SIZE])
+  
+    result = LogLocation(seek_loc + nl_index, time,
+                         logloc.time_cmp(time, times[0]), # how it compares, min
+                         logloc.time_cmp(time, times[1])) # how it compares, max
+    return result
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # optimistic_edge_search
+  #--------------------------------------------------------------------------------------------------------------------
+  def optimistic_edge_search(self, guess, looking_for, times):
+    """Reads a large(r) chunk and checks it for the min or max boundry.
+  
+    Inputs:
+      guess       - A LogLocation to start from for finding an edge.
+      looking_for - self.LOOKING_FOR_BOTH, self.LOOKING_FOR_MIN, or self.LOOKING_FOR_MAX
+  
+    Returns:
+      LogLocation - better guess, or an actual boundry
+  
+    Raises: 
+      InvalidArgument - self.LOOKING_FOR_NEITHER was passed in
+    """
+  
+    if looking_for == self.LOOKING_FOR_NEITHER:
+      raise InvalidArgument("LOOKING_FOR_NEITHER is not accepted", self.LOOKING_FOR_NEITHER)
+  
+    # DEBUG
+    if config.DEBUG:
+      if looking_for == self.LOOKING_FOR_NEITHER:
+        print "LOOKING_FOR_NEITHER" # DEBUG
+      if looking_for == self.LOOKING_FOR_BOTH:
+        print "LOOKING_FOR_BOTH" # DEBUG
+      if looking_for == self.LOOKING_FOR_MIN:
+        print "LOOKING_FOR_MIN" # DEBUG
+      if looking_for == self.LOOKING_FOR_MAX:
+        print "LOOKING_FOR_MAX" # DEBUG
+  
+    seek_loc = guess.get_loc()
+    if guess.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
+      # we're looking for the max and we're above it, so read from a chunk away up to here.
+      DBG("looking high") # DEBUG
+      DBG("%d %d" % (guess.get_loc(), guess.get_loc() - config.EDGE_SWEEP_CHUNK_SIZE)) # DEBUG
+      seek_loc -= config.EDGE_SWEEP_CHUNK_SIZE
+      seek_loc = 0 if seek_loc < 0 else seek_loc
+      self.log.seek(seek_loc)
+      stats.seeks += 1
+    else:
+      # we're looking for the min and we're below it, so read starting here.
+      self.log.seek(seek_loc)
+      stats.seeks += 1
+    chunk = self.log.read(config.EDGE_SWEEP_CHUNK_SIZE)
+    stats.reads += 1
+    stats.edge_sweep_size += config.EDGE_SWEEP_CHUNK_SIZE
+    at_eof = True if self.log.tell() == self.filesize else False # Python, why u no have file.eof?
+  
+    prev_minmax = guess.get_minmax()
+    result = LogLocation(0, datetime.min,
+                         LogLocation.TOO_LOW,
+                         LogLocation.TOO_HIGH) # an invalid result to start with
+    chunk_loc = 0
+    end_loc   = chunk.rfind('\n')
+    nl_index  = chunk_loc # index into chunk[chunk_loc:] of the newline we're looking for current loop
+    while chunk_loc < end_loc:
+      DBG("%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc)) # DEBUG
+      try:
+        # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
+        # send to parse_time to get datetime
+        time = self.parse_time(chunk[chunk_loc : chunk_loc + config.LOG_TIMESTAMP_SIZE])
+        DBG(time) # DEBUG
+        DBG(times) # DEBUG
+  
+        # start building result
+        result.set_loc(seek_loc + chunk_loc)
+        result.set_time(time)
+  
+        # compare to desired to see if it's a better max
+        if time > times[1]:
+          DBG("time > max") # DEBUG
+          result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
+        elif time == times[1]:
+          DBG("time == max") # DEBUG
+          # do nothing for now about this match, may optimize to save it off later.
+          result.set_rel_to_max(LogLocation.MATCH)
+        else: # time < times[1]
+          DBG("time < max") # DEBUG
+          result.set_rel_to_max(LogLocation.TOO_LOW)
+   
+        # compare to desired to see if it's a better min
+        if time < times[0]:
+          DBG("time < min") # DEBUG
+          result.set_rel_to_min(LogLocation.TOO_LOW)
+        elif time == times[0]:
+          DBG("time == min") # DEBUG
+          # do nothing for now about this match, may optimize to save it off later.
+          result.set_rel_to_min(LogLocation.MATCH)
+        else: # time > times[0]
+          DBG("time > min") # DEBUG
+          result.set_rel_to_min(LogLocation.TOO_HIGH)
+  
+        # We jumped entirely over the range in one line. There is no spoon.
+        if (prev_minmax == LogLocation.OUT_OF_RANGE_LOW) and (result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH):
+          raise NotFound("Desired logs not found.", times, guess)
+  
+  #      DBG(result.get_minmax()) # DEBUG
+  
+        # see if the result's a min or max bondry
+        if (looking_for == self.LOOKING_FOR_MIN) or (looking_for == self.LOOKING_FOR_BOTH):
+          if (prev_minmax[0] == LogLocation.TOO_LOW) and (result.get_rel_to_min() != LogLocation.TOO_LOW):
+            # We passed into our range via min. This is one.
+            result.set_is_min(True)
+            break
+        elif (looking_for == self.LOOKING_FOR_MAX) or (looking_for == self.LOOKING_FOR_BOTH):
+          # check to see if it's the edge
+          if (prev_minmax[1] != LogLocation.TOO_HIGH) and (result.get_rel_to_max() == LogLocation.TOO_HIGH):
+            # We passed out of range. This loc is where we want to /stop/ reading. Save it!
+            result.set_is_max(True)
+            break
+  
+        # Check to see if we can short-circuit this loop due to already being too high
+        if result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH:
+          break
+  
+        prev_minmax = result.get_minmax()
+        # find the next newline so we can find the next timestamp
+        nl_index = chunk[chunk_loc:].find('\n')
+        if nl_index == -1:
+  #        DBG("can't find new line") # DEBUG
+          break # Can't find a newline; we're done.
+        chunk_loc += nl_index + 1 # +1 to get past newline char
+      except NotTime: # not a time string found
+  #      DBG("time parse error") # DEBUG
+        # we're ok with occasional non-time string lines. Might start the read in the middle of a line, for example.
+        # find the next newline so we can find the next timestamp
+  
+        # We errored, so find the next newline...
+        nl_index = chunk[chunk_loc:].find('\n')
+        if nl_index == -1:
+  #        DBG("can't find new line") # DEBUG
+          break # Can't find a newline; we're done.
+        chunk_loc += nl_index + 1 # +1 to get past newline char
+    
+    ###
+    # Edge Cases
+    ###
+  
+    # if we read to the end of our LOOKING_FOR_MAX chunk, and don't find the in range or match -> too high edge,
+    # then the_guess max IS the boundry max.
+    if not result.get_is_boundry() and (looking_for == self.LOOKING_FOR_MAX) and (chunk_loc == end_loc):
+      result.set_loc(guess.get_loc())
+      result.set_time(guess.get_time())
+      result.set_minmax(guess.get_rel_to_min(), guess.get_rel_to_max())
+      result.set_is_max(True)
+  
+    # if we read a chunk at the end of the file, searched through that, and didn't come up with a min or max,
+    # set the max to eof.
+    if not result.get_is_boundry() and at_eof and \
+        ((looking_for == self.LOOKING_FOR_MAX) or (looking_for == self.LOOKING_FOR_BOTH)):
+      result.set_loc(seek_loc + len(chunk))
+      result.set_time(time)
+      result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
+      result.set_is_max(True)
+  
+    # If we're only looking for the min, and we hit eof and didn't find it... Well, it's not there, man. Sorry.
+    if not result.get_is_min() and at_eof and (looking_for == self.LOOKING_FOR_MIN):
+      result.set_loc(seek_loc + len(chunk))
+      result.set_time(time)
+      result.set_minmax(logloc.time_cmp(time, times[0]), logloc.time_cmp(time, times[1]))
+      result.set_is_min(True)
+  
+  #  DBG(result) # DEBUG
+    return result
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # parse_time: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def parse_time(self, time_str):
+    """Tries to parse string into a datetime object.
+  
+    Inputs:
+      time_str - timestamp from log, formatted like: "Feb 13 18:31:36". Will ignore extra junk at end.
+  
+    Returns:
+      datetime - datetime representation of time_str, set to the current year
+  
+    Raises:
+      NotTime - error parsing string into datetime
+    """
+    # split the string on the whitespace, e.g. ["Feb", "14", "05:52:12", "web0"]
+    # join the first three back together again with ' ' as the seperator
+    # parse the thing!
+    just_timestamp = ' '.join(time_str.split()[:config.LOG_TIMESTAMP_PARTS])
+  
+    # parse with the illustrious strptime
+    try:
+      return datetime.strptime(just_timestamp + str(datetime.now().year), "%b %d %H:%M:%S%Y")
+    except ValueError:
+      raise NotTime("Could not parse timestamp.", time_str)
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # update_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def update_guess(self, guess):
+    """Updates the self.boundaries list based on the guess.
+  
+    Inputs:
+      guess           - A LogLocation that may or may not be better than the current guesses.
+  
+    Updates in place:
+      self.boundaries - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
+  
+    Returns: 
+      Boolean - True if self.boundaries improved, otherwise False
+  
+    Raises:  Nothing
+    """
+    improved = False
+  
+    if guess.get_is_min() == True: # set to min 'guess' if it's the Real Actual min boundry
+      self.boundaries[0] = guess
+      improved = True
+  
+    elif guess.get_is_max() == True: # set to max 'guess' if it's the Real Actual max boundry
+      self.boundaries[1] = guess
+      improved = True
+  
+    elif guess.get_rel_to_min() == LogLocation.TOO_LOW: # not far enough
+      # Compare with min, replace if bigger
+      if guess.get_loc() > self.boundaries[0].get_loc():
+        self.boundaries[0] = guess
+        improved = True
+  
+    elif guess.get_rel_to_max() == LogLocation.TOO_HIGH: # too far
+      # Compare with max, replace if smaller
+      if guess.get_loc() < self.boundaries[1].get_loc():
+        self.boundaries[1] = guess
+        improved = True
+  
+    return improved
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # print_log_lines: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
+  #--------------------------------------------------------------------------------------------------------------------
+  def print_log_lines(self, writable=sys.stdout):
+    """Prints to stdout the range of the log indicated by self.boundaries.
+  
+    Inputs:
+      writable - writable object to print output to
+  
+    Returns: Nothing
+  
+    Raises:  Nothing
+    """
+    start_loc = self.boundaries[0].get_loc()
+    self.log.seek(start_loc)
+    stats.seeks += 1
+  
+    end_loc = self.boundaries[1].get_loc()
+  
+    # Print out the logs in question in chunks, so that we don't use too much memory.
+    curr = start_loc
+    while curr < end_loc:
+      # only print up to the end of our range
+      chunk_size = 0
+      if curr + config.MAX_PRINT_CHUNK_SIZE <= end_loc:
+        chunk_size = config.MAX_PRINT_CHUNK_SIZE
+      else:
+        chunk_size = end_loc - curr
+  
+      chunk = self.log.read(chunk_size)
+      stats.reads += 1
+      stats.print_reads += 1
+      curr += chunk_size
+    
+      writable.write(chunk) # NOT A DEBUG STATEMENT! LEAVE ME IN!!!
+      stats.print_size += chunk_size
+  #    DBG((chunk_size, end_loc - start_loc)) # DEBUG
+  #    DBG((start_loc, curr, end_loc)) # DEBUG
+  
+  #--------------------------------------------------------------------------------------------------------------------
+  # input_time_parse: Parses time from command line args
+  #--------------------------------------------------------------------------------------------------------------------
+  def input_time_parse(self, input, first_time):
+    """Parses time that  was input from command line args
+  
+    For a specific time, "8:42:04", only that time will be used
+    For a seconds-lacking time, "10:01", that entire minute will be used ("10:01:00" to "10:01:59")
+    For a specific range, "1:2:3-14:15:16", that specific range will be used.
+    For a seconds-lacking range end, "59" will be the seconds. 
+      ("10:01:01-10:04" -> "10:01:01-10:04:59")
+      ("10:01-10:04"    -> "10:01:00-10:04:59")
+  
+    Inputs:
+      input      - arg from the command line that might be a time or time range
+      first_time - datetime of first timestamp in the log file
+  
+    Returns: 
+      list - [min time, max time] (if one specific time was requested, min and max will be the same)
+  
+    Raises:
+      NotTime - The input was not a properly formatted time string.
+      RegexError - The regex went wonky.
+    """
+    time_regex = re.compile(config.TIME_REGEX, re.IGNORECASE) 
+    times = time_regex.findall(input) # returns [(group1, group2)] for my regex
+    if times == []:
+      # Raise the alarm! No regex match!
+  #    DBG("NO MATCH!") # DEBUG
+      raise NotTime("This is not in the right format. No regex match.", input)
+    elif 0 < times[0] < 3:
+      # Something's wrong with the regex. Only supposed to get 1 or 2 matches.
+  #    DBG("REGEX BUG!") # DEBUG
+      raise RegexError("Something went wrong with the regex.", config.TIME_REGEX, input)
+  
+    retval = []
+    lacking_secs = False
+    for time in times[0]:
+      if time == '':
+        continue # they only passed in one time, not a range
+      lacking_secs = False # when have 2 times, don't care if first lacks seconds
+      arr  = time.split(':')
+  
+      if len(arr) == 2: # no seconds
+        arr.append(0)
+        lacking_secs = True
+      t = first_time.replace(hour=int(arr[0]), minute=int(arr[1]), second=int(arr[2]), microsecond=0)
+  
+      retval.append(t)
+    
+    # if only one time was specified, stick a second one in to round out the [min, max] list.
+    if len(retval) == 1:
+      retval.append(retval[0])
+  
+    # if no seconds were requested, they want a range of a minute, so append one with 59 secs
+    if lacking_secs:
+      retval[1] = retval[1].replace(second=int(59))
+  
+  #  DBG(retval) # DEBUG
+    return retval
 
-  # if no seconds were requested, they want a range of a minute, so append one with 59 secs
-  if lacking_secs:
-    retval[1] = retval[1].replace(second=int(59))
 
-#  DBG(retval) # DEBUG
-  return retval
-
+#######################################################################################################################
+# Functions that are Cool enough not to need a class
+#######################################################################################################################
+  
 #----------------------------------------------------------------------------------------------------------------------
 # pretty_size: I'm so pretty~ Oh so pretty~
 #----------------------------------------------------------------------------------------------------------------------
@@ -1165,7 +1153,7 @@ if __name__ == '__main__':
   else:
     config_file = DEFAULT_CONFIG
 
-    # Won't load over my fucking import up above //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  # Load the config file
   try:
     tgrep_config = imp.load_source('tgrep_config', config_file)
     from tgrep_config import stats, config
@@ -1232,7 +1220,8 @@ if __name__ == '__main__':
   ###
   # tgrep actually starts here...
   ###
-  tgrep(the_time, the_log, options.binary_search) # grep the file
+  grepper = LogSearch(the_time, the_log)
+  grepper.tgrep(options.binary_search) # grep the file
 
   ###
   # print statistics
@@ -1260,6 +1249,7 @@ if __name__ == '__main__':
 
   if options.super_verbose or options.super_verbose_error:
     print >>writable, "refocused wide sweep loops: %4d" % stats.refocused_wide_sweep_loops
+    print >>writable, "edge sweep searched: %s" % pretty_size(stats.edge_sweep_size)
     print >>writable, "wide sweep locs: "
     print >>writable, stats.wide_sweep_end_locs
     print >>writable, "final locs: "
@@ -1270,3 +1260,10 @@ if __name__ == '__main__':
     else:
       print >>writable, "[%s, %s]" % (str(stats.requested_times[0]), str(stats.requested_times[1]))
 
+  # DEBUG # //!
+#  impo.imp_file(config_file)
+#  x = impo.Bar()
+#  x.lolwut()
+#  x = impo.Foo(config_file)
+#  x.lolwut()
+#  print >>writable, "edge sweep searched: %s" % pretty_size(stats.edge_sweep_size)
