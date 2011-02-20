@@ -1,0 +1,38 @@
+
+
+TODO: 
+parser = OptionParser(usage = usage)#, version="%%prog %s" % __version__) # need to get at __version__ in __init__.py
+
+
+* Notes:
+  http://gskinner.com/RegExr/    # REGEX!
+  http://docs.python.org/library/multiprocessing.html
+  http://docs.python.org/library/queue.html#Queue.Queue
+  http://docs.python.org/library/os.html
+  http://docs.python.org/release/2.4.4/lib/bltin-file-objects.html
+  http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
+  http://effbot.org/zone/wide-finder.htm#a-multi-threaded-python-solution
+
+* Requirements
+1. It has to give the right answer, even in all the special cases. (For extra credit, list all the special cases you can
+think of in your README)
+
+2. It has to be fast. During testing, keep count of how many times you call lseek() or read(), and then make those
+numbers smaller. (For extra credit, give us the big-O analysis of the typical case and the worst case)
+
+3. Elegant code is better than spaghetti.
+
+By default it uses /logs/haproxy.log as the input file, but you can specify an alternate filename by appending it to the
+command line. It also works if you prepend it, because who has time to remember the order of arguments for every little
+dumb script?
+
+The log file is usually about 60-70GB by the end of the day.
+We usually get about 1500 log lines per second at peak and about 500 per second at the valley.
+
+- When you're ready to submit your work, send a PM to #redditjobs and we'll tell you where to send your code. You can
+  also write to that mailbox if you need clarification on anything.
+- We'd like all the submissions to be in by Tuesday, February 22.
+- Regardless of which project you pick, we ask you to please keep your work private until the end of March. After that,
+  you can do whatever you want with it -- it's your code, after all!
+
+

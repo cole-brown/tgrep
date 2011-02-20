@@ -44,58 +44,27 @@ Options:
 # Gentlemen, set your window width to 120 characters. You have been warned.
 ###
 
-__author__     = "Cole Brown (spydez)"
-__copyright__  = "Copyright 2011"
-__credits__    = ["The reddit Backend Challenge (http://redd.it/fjgit)", "Cole Brown"]
-__license__    = "BSD-3"
-__version__    = "0.8.69" # //!
-__maintainer__ = "Cole Brown"
-__email__      = "git@spydez.com"
-__status__     = "Development" # "Prototype", "Development", or "Production"
-
-
-requirements = """
-1. It has to give the right answer, even in all the special cases. (For extra credit, list all the special cases you can think of in your README)
-
-2. It has to be fast. During testing, keep count of how many times you call lseek() or read(), and then make those numbers smaller. (For extra credit, give us the big-O analysis of the typical case and the worst case)
-
-3. Elegant code is better than spaghetti.
-
-By default it uses /logs/haproxy.log as the input file, but you can specify an alternate filename by appending it to the command line. It also works if you prepend it, because who has time to remember the order of arguments for every little dumb script?
-
-The log file is usually about 60-70GB by the end of the day.
-We usually get about 1500 log lines per second at peak and about 500 per second at the valley.
-
-- When you're ready to submit your work, send a PM to #redditjobs and we'll tell you where to send your code. You can also write to that mailbox if you need clarification on anything.
-- We'd like all the submissions to be in by Tuesday, February 22.
-- Regardless of which project you pick, we ask you to please keep your work private until the end of March. After that, you can do whatever you want with it -- it's your code, after all!
-"""
 
 todo = """
-README.mk
-
-grep //! 
-
 comment code
-
 space out code?
+  - [X] tgrep
+  - [ ] logloc
+  - [ ] anomaly
+  - [ ] config-big
+  - [ ] extra
+
+backport updates to config-big
 
 tgrep.py -> tgrep
+
+remove bad guesses const from config.
 
 make branch, remove debugs
 
 remove header from logloc?
 
 comment other files?
-
-Notes:
-  http://gskinner.com/RegExr/    # REGEX!
-  http://docs.python.org/library/multiprocessing.html
-  http://docs.python.org/library/queue.html#Queue.Queue
-  http://docs.python.org/library/os.html
-  http://docs.python.org/release/2.4.4/lib/bltin-file-objects.html
-  http://backyardbamboo.blogspot.com/2009/02/python-multiprocessing-vs-threading.html
-  http://effbot.org/zone/wide-finder.htm#a-multi-threaded-python-solution
 """
 
 
@@ -115,7 +84,6 @@ from anomaly import NotFound, NotTime, RegexError, InvalidArgument
 if __name__ != '__main__':
   # Auto-load for unit tests. Usually loaded down at bottom via imp.
   from config import stats, config
-import impo # //!
 
 # CONSTANTS
 DEFAULT_CONFIG = 'config.py'
@@ -125,9 +93,10 @@ MIN_NUM_ARGS = 1
 MAX_NUM_ARGS = 2 # time and file path
 
 
-#######################################################################################################################
+
+#======================================================================================================================
 # LogSearch: class containing that awesome tgrep function
-#######################################################################################################################
+#======================================================================================================================
 class LogSearch:
 
   # used by edge sweep and optimistic search
@@ -169,14 +138,14 @@ class LogSearch:
   
     Prints:  Logs
     """
-    self.filesize = os.path.getsize(self.log_path)
+    self.filesize   = os.path.getsize(self.log_path)
     stats.file_size = pretty_size(self.filesize)
   
     try:
       end   = None
       start = datetime.now()
       # open 'rb' to avoid a bug in file.tell() in windows when file has unix line endings, even though I can't test in
-      # windows, and have nyo idea if the rest will work there.
+      # windows, and have no idea if the rest will work there.
       with open(self.log_path, 'rb') as self.log: 
         self.log_timestamps = [self.first_timestamp(), self.last_timestamp()]
         DBG("first: %s" % self.log_timestamps[0]) # DEBUG
@@ -209,8 +178,10 @@ class LogSearch:
         DBG(requested_times) # DEBUG
      
   #      DBG("at: %s" % all_times) # DEBUG
+        # check times, get two ranges if twice in log file
         all_times = self.time_check(requested_times)
         DBG("at: %s" % all_times) # DEBUG
+
         if all_times == []:
           print >>sys.stderr, "No matches for requested time in file."
           print >>sys.stderr, "input:            %s"   % str(self.input_time)
@@ -218,6 +189,7 @@ class LogSearch:
           print >>sys.stderr, "file end:         %s\n" % str(self.log_timestamps[1])
           return
   
+        # main tgrep loop
         for times in all_times:
      
           # Jump around the file in binary time-based fashion first
@@ -243,9 +215,9 @@ class LogSearch:
           stats.find_time = end - start
       
           stats.final_locs.append(self.boundaries)
-          start = datetime.now()
 
           # Now, on to printing!
+          start = datetime.now()
           self.print_log_lines()
       
           # Figure out how much time printing took.
@@ -284,9 +256,7 @@ class LogSearch:
       if config.DEBUG:
         print "\n"
         raise
-    
-  
-  
+
   #--------------------------------------------------------------------------------------------------------------------
   # time_check: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
   #--------------------------------------------------------------------------------------------------------------------
@@ -294,10 +264,10 @@ class LogSearch:
     """Determines if times are valid for supplied self.log_timestamps.
   
     Since no day is supplied on the command line, there could be a double match in the file: one on the first day and
-    one on the second. If so, this
+    one on the second. If so, this will return both.
   
     Inputs:
-      times       - Should be a list of size two with the low and high times requeted.
+      times - Should be a list of size two with the low and high times requeted.
   
     Returns: 
       list - a list of 'times' lists. Could be just [times]. Might be [times, [times[0]+a_day, times[1]+a_day]].
@@ -319,8 +289,6 @@ class LogSearch:
     DBG(result) # DEBUG
     return result
     
-  
-  
   #--------------------------------------------------------------------------------------------------------------------
   # wide_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
   #--------------------------------------------------------------------------------------------------------------------
@@ -338,7 +306,7 @@ class LogSearch:
   
     Raises: Nothing
     """
-    # binary search, with friends!
+    # TAB search! Or... that boring binary fellow.
     search_func = None
     if search_type:
   #    DBG("BINARY search!") # DEBUG
@@ -351,14 +319,15 @@ class LogSearch:
     too_high_time = self.log_timestamps[1].replace(second=self.log_timestamps[1].second + 1)
     self.boundaries = [LogLocation(0,             self.log_timestamps[0], LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
                        LogLocation(self.filesize, too_high_time,          LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
+
     focus = 0 # where we'll jump to for the text search
     hits  = [] # any exact matches to min or max we happen upon along the way
     done = False
     is_min_guess = False # toggle
     bad_results = [0, 0]
-    # binary time-based search until focal point comes up the same twice or we're close enough as per config param
+    # quickly search through file to get min/max guess as close as possible.
     while not done:
-      for time in times:
+      for time in times: # requested region
         is_min_guess = not is_min_guess # toggle 
         if bad_results[0 if is_min_guess else 1] > config.WIDE_SWEEP_MAX_RANGE_HITS:
           if bad_results[1 if is_min_guess else 0] > config.WIDE_SWEEP_MAX_RANGE_HITS: # note the 0 & 1 swap
@@ -382,9 +351,6 @@ class LogSearch:
         DBG("time:   %d" % focus) # DEBUG
   
         try:
-          if isinstance(focus, float):
-            DBG("FOCUS IS FLOAT!!!") # DEBUG
-
           # check focus for timestamp
           result = self.pessimistic_forward_search(focus, times) 
           good_result = self.update_guess(result) # updates self.boundaries in place
@@ -422,7 +388,6 @@ class LogSearch:
   
     return hits, self.boundaries
   
-      
   #--------------------------------------------------------------------------------------------------------------------
   # edge_sweep: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
   #--------------------------------------------------------------------------------------------------------------------
@@ -441,7 +406,8 @@ class LogSearch:
     Raises:  
       NotFound - desired range does not exist
     """
-    # Find the extenses of the range. Range could still be fucking gigabytes! Which would take a while to print...
+    # Find the extenses of the range. Range could still be fucking gigabytes! Which would take a while to print... But
+    # still... don't assume anything.
   
     # Now we do the edge finding the incremental way. We take our min & max from self.boundaries, send them to
     # optimistic_edge_search to linearly search from that min/max, and process the result to get a better min/max guess
@@ -449,12 +415,14 @@ class LogSearch:
     done = False
     looking_for = self.LOOKING_FOR_BOTH # We want both min and max boundries right now.
     while not done:
-      for near_guess in self.boundaries:
-        if near_guess.get_is_boundry():
+      for guess in self.boundaries:
+        if guess.get_is_boundry():
           continue # It's already been found. Continue to the other.
         stats.edge_sweep_loops += 1
-        DBG("ng: %s" % near_guess) # DEBUG
-        result = self.optimistic_edge_search(near_guess, looking_for, times)
+  
+        DBG("guess: %s" % guess) # DEBUG
+        # look for it...
+        result = self.optimistic_edge_search(guess, looking_for, times)
   
         # DEBUG
         if config.DEBUG:
@@ -481,13 +449,13 @@ class LogSearch:
       if looking_for == self.LOOKING_FOR_NEITHER:
         done = True
     
-    # Should never be true unless someone fucks up optimistic_edge_search or update_guess.
+    # Should never be true unless someone fucks up optimistic_edge_search or update_guess. optimistic_edge_search itself
+    # will raise NotFound for actual NotFound events.
     if not self.boundaries[0].get_is_boundry() or not self.boundaries[1].get_is_boundry():
       DBG("NOT FOUND!!!!") # DEBUG
       raise NotFound("Desired logs not found.", times, self.boundaries)
   
     DBG(self.boundaries) # DEBUG
-  
   
   #--------------------------------------------------------------------------------------------------------------------
   # refocus
@@ -499,8 +467,8 @@ class LogSearch:
     It will move it by config.
   
     Inputs:
-      focus           - location in file intended to focus search
-      for_min         - True if this guess should be for min, False otherwise
+      focus   - location in file intended to focus search
+      for_min - True if this guess should be for min, False otherwise
   
     Returns:
       int - refocused focal point
@@ -514,6 +482,10 @@ class LogSearch:
       # add back self.boundaries[0] to get refocused distance from beginning of file
       rf = (focus - self.boundaries[0].get_loc()) * (1 - config.REFOCUS_FACTOR) + self.boundaries[0].get_loc()
     else:
+      DBG("high:   %d %f" % (self.boundaries[1].get_loc(), self.boundaries[1].get_loc())) # DEBUG
+      DBG("focus:  %d %f" % (focus, focus)) # DEBUG
+      DBG("low:    %d %f" % (self.boundaries[0].get_loc(), self.boundaries[0].get_loc())) # DEBUG
+      DBG("factor: %d %f" % (config.REFOCUS_FACTOR, config.REFOCUS_FACTOR)) # DEBUG
       rf = (self.boundaries[1].get_loc() - focus) * config.REFOCUS_FACTOR + self.boundaries[0].get_loc()
   
     DBG("rf: %7.3f" % rf) # DEBUG
@@ -558,11 +530,6 @@ class LogSearch:
     Raises: Nothing
     """
     SECONDS_PER_DAY = 86400
-    # For now, we assume last_timestamp() got called.
-    #if self.boundaries[1].get_time() == datetime.max:
-    #  # haven't hit any actual point in the file, yet, so max guess is at default value.
-    #  pass
-  
     # Let's do a little math. Let:
     #  r = lowest  guess in self.boundaries (datetime)
     #  e = highest guess in self.boundaries (datetime)
@@ -586,11 +553,13 @@ class LogSearch:
     # is. We then use this time percentage to calculate the percentage in bytes with an assumption, quite simply, that
     # time % == bytes %. Add this 'bytes into the region' to i, and you get the estimated min location of the time. For
     # the estimated max answer, you must also add the estimated bytes per second.
-    # MAX's BYTES PER SEC STUFF>
     #  K = (l / p)
     #  T = 1 - (z / p) 
     #  H = (K * (t-i)) + i (the answer for min)
     #  X = (K * (t-i)) + i + bytes_per_sec (the answer for max, one second worth of bytes above min's answer)
+    # 
+    # There is one catch for adding the estimated bytes per second to X: don't do it if it would put you over 
+    # the max boundary.
   
     low_j  = desired - self.boundaries[0].get_time()
     high_j = self.boundaries[1].get_time() - desired
@@ -630,8 +599,18 @@ class LogSearch:
     H = (K * (self.boundaries[1].get_loc() - self.boundaries[0].get_loc())) + self.boundaries[0].get_loc()
     X = (K * (self.boundaries[1].get_loc() - self.boundaries[0].get_loc())) + \
         self.boundaries[0].get_loc() + BYTES_PER_SEC
-  #  DBG("    H: %7.3f" % H) # DEBUG
-  #  DBG("    X: %7.3f" % X) # DEBUG
+    if X > self.boundaries[1].get_loc():
+      # Whoops. Too far. Get rid of our "rest of the second's worth of bytes" estimate.
+      X -= BYTES_PER_SEC
+  
+    # DEBUG
+    if config.DEBUG:
+      if for_min:
+        DBG("   *H: %7.3f" % H) # DEBUG
+        DBG("    X: %7.3f" % X) # DEBUG
+      else:
+        DBG("    H: %7.3f" % H) # DEBUG
+        DBG("   *X: %7.3f" % X) # DEBUG
     
     return int(H) if for_min else int(X)
   
@@ -703,6 +682,7 @@ class LogSearch:
     Raises: 
       NotTime - parse_time had error parsing string into datetime
     """
+    print "seek_loc: %d %f" % (seek_loc, seek_loc)
     self.log.seek(seek_loc)
     stats.seeks += 1
   
@@ -747,7 +727,6 @@ class LogSearch:
     Raises: 
       InvalidArgument - self.LOOKING_FOR_NEITHER was passed in
     """
-  
     if looking_for == self.LOOKING_FOR_NEITHER:
       raise InvalidArgument("LOOKING_FOR_NEITHER is not accepted", self.LOOKING_FOR_NEITHER)
   
@@ -787,6 +766,8 @@ class LogSearch:
     chunk_loc = 0
     end_loc   = chunk.rfind('\n')
     nl_index  = chunk_loc # index into chunk[chunk_loc:] of the newline we're looking for current loop
+
+    # search linearly through the chunk
     while chunk_loc < end_loc:
       DBG("%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc)) # DEBUG
       try:
@@ -824,8 +805,8 @@ class LogSearch:
           DBG("time > min") # DEBUG
           result.set_rel_to_min(LogLocation.TOO_HIGH)
   
-        # We jumped entirely over the range in one line. There is no spoon.
         if (prev_minmax == LogLocation.OUT_OF_RANGE_LOW) and (result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH):
+          # We jumped entirely over the range in one line. There is no spoon.
           raise NotFound("Desired logs not found.", times, guess)
   
   #      DBG(result.get_minmax()) # DEBUG
@@ -1043,8 +1024,8 @@ class LogSearch:
     for time in times[0]:
       if time == '':
         continue # they only passed in one time, not a range
-      lacking_secs = False # when have 2 times, don't care if first lacks seconds
-      arr  = time.split(':')
+      lacking_secs = False 
+      arr = time.split(':')
   
       if len(arr) == 2: # no seconds
         arr.append(0)
@@ -1065,15 +1046,15 @@ class LogSearch:
     return retval
 
 
-#######################################################################################################################
+#======================================================================================================================
 # Functions that are Cool enough not to need a class
-#######################################################################################################################
+#======================================================================================================================
   
 #----------------------------------------------------------------------------------------------------------------------
 # pretty_size: I'm so pretty~ Oh so pretty~
 #----------------------------------------------------------------------------------------------------------------------
 def pretty_size(num):
-  """Returns a string of the input bytes, prettily formatted for human reading. E.g. 2048-> '2 KiB'"""
+  """Returns a string of the input bytes, prettily formatted for human reading. E.g. 2048 -> '2 KiB'"""
   for x in ['bytes','KiB','MiB','GiB','TiB', 'PiB', 'EiB', 'ZiB', 'YiB']:
     if num < 1024.0:
       return "%3.1f %s" % (num, x)
@@ -1091,6 +1072,9 @@ def DBG(printable):
 
 
 
+#----------------------------------------------------------------------------------------------------------------------
+# Almost there...
+#----------------------------------------------------------------------------------------------------------------------
 usage = """\
 Usage: %prog times
    Or: %prog times [file]
@@ -1108,12 +1092,14 @@ Example:
      [log lines between 23:59:00 and 0:03:59]
    $ %prog 23:59:30-0:03:01
      [log lines between 23:59:30 and 0:03:01"""
+#======================================================================================================================
 #----------------------------------------------------------------------------------------------------------------------
 #                                                    The Main Event
 #----------------------------------------------------------------------------------------------------------------------
+#======================================================================================================================
 if __name__ == '__main__':
   # Setup arg parser
-  parser = OptionParser(usage = usage, version="%%prog %s" % __version__)
+  parser = OptionParser(usage = usage)
   parser.add_option("-b", "--binary",
                     action="store_true", dest="binary_search", default=False,
                     help="use pure binary search instead of time-adjusted binary search")
@@ -1144,6 +1130,7 @@ if __name__ == '__main__':
   ###
   # load config
   ###
+  # Decide which to used...
   config_file = ''
   if isinstance(options.configfile, basestring):
     if os.path.isfile(options.configfile):
@@ -1260,10 +1247,4 @@ if __name__ == '__main__':
     else:
       print >>writable, "[%s, %s]" % (str(stats.requested_times[0]), str(stats.requested_times[1]))
 
-  # DEBUG # //!
-#  impo.imp_file(config_file)
-#  x = impo.Bar()
-#  x.lolwut()
-#  x = impo.Foo(config_file)
-#  x.lolwut()
-#  print >>writable, "edge sweep searched: %s" % pretty_size(stats.edge_sweep_size)
+# Fin

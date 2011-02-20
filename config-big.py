@@ -1,7 +1,10 @@
-
-
+####
+###
+##
 # Don't delete stuff unless you want an error...
-
+##
+###
+####
 
 from extra import Configuration, Statistics
 
@@ -33,9 +36,10 @@ config = Configuration(
   LOG_TIMESTAMP_PARTS = 3, # "Feb", "13", "18:31:36"
 
   # If the time-adjusted binary search hits inside the region of desired logs, it's not much help. We need mins and
-  # maxes. This is how much to move the out by (out from the focus towards lower or upper bound).  seek loc to reel back
-  # the search.
-  REFOCUS_FACTOR = 0.15,
+  # maxes. This is how much to move the out by (out from the focus towards lower or upper bound). Closer to 0 makes the
+  # search faster & more aggressive, but too close makes wide sweep's time-adjusted binary search fail too fast and
+  # leaves too much of the log for edge sweep to chug through linearly.
+  REFOCUS_FACTOR = 0.15, # 15%
 
   # Maximum number of times to hit inside the range once time-adjusted binary search has gone into refocus mode.
   # This will be applied independently to the upper and lower bounds of the search.
