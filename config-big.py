@@ -46,12 +46,11 @@ config = Configuration(
   WIDE_SWEEP_MAX_RANGE_HITS = 1,
 
   # The initial binary time-adjusted search will quit once it's either this close (in bytes) or stabalized.
-  WIDE_SWEEP_CLOSE_ENOUGH = CLOSE_ENOUGH, # bytes. //! adjust to ~(1500-500)/2*log_size
+  WIDE_SWEEP_CLOSE_ENOUGH = CLOSE_ENOUGH, # bytes. 
   
   # Amount (in bytes) of the file that the edge-finding algorithm will read in at a time. Higher /might/ give better
   # speed but will also use more memory.
   EDGE_SWEEP_CHUNK_SIZE = A_GOOD_CHUNK_TO_READ, # bytes
-  EDGE_SWEEP_PESSIMISM_FACTOR = 3, # curr * this > expected? Then we act all sad. //! used?
   
   # Amount (in bytes) of the file that will be read and printed at a time. Higher should give better speed but
   # will use more meory.
@@ -62,7 +61,8 @@ config = Configuration(
   #   1:2:3
   #   22:33
   #   23:33:11
-  #   23:33-23:33
+  #   23:33-23:33:1
+  #   23:33:1-23:33
   #   23:33:1-23:33:1
   #   23:33:11-23:33:11
   #
@@ -71,19 +71,18 @@ config = Configuration(
   #   23:33-23:33:
   #   23:33:-23:33:
   #   22:33:44:1
-  # TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})-?((?:\d{1,2}:){1,2}\d{1,2})?$', # old and busted
-  TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$', # new hotness
+  TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$',
   
   # Sometimes two different sections of a log will match a supplied time range. For example, the log file goes from Feb
   # 12 06:30 to Feb 13 07:00, and the user asks for logs with timestamp 6:50. That's in both the Feb 12 and Feb 13 parts
   # of the file. How do you want these seperated when they're printed out?
   DOUBLE_MATCH_SEP = '\n\n\n',
 
-  # Don't turn this on. Seriously... Unless you want to debug.
+  # Don't turn this on. Seriously... Unless you want to debug and all the debug prints are on your branch.
   DEBUG = True,
 
-  # Maximum size in bytes of mmap-able region.
-  MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here  //! Ain't usin' this...
+  # May break tgrep. May make it go faster... May do nothing at all.
+  EXPERIMENTAL = True,
 )
 
 
@@ -99,17 +98,17 @@ stats = Statistics(
   reads = 0, # total
   print_reads = 0, # print-only
   wide_sweep_loops = 0, # total
-  refocused_wide_sweep_loops = 0,
   edge_sweep_loops = 0,
   wide_sweep_time  = None,
   edge_sweep_time  = None,
   find_time  = None,
   print_time = None,
-  file_size = '0 bytes',
   print_size = 0, # bytes
-  edge_sweep_size = 0, # bytes
+  file_size = '0 bytes',
 
   # extra verbosity statistics
+  edge_sweep_size = 0, # bytes
+  refocused_wide_sweep_loops = 0,
   requested_times = [],
   wide_sweep_end_locs = [],
   final_locs = []

@@ -1,6 +1,7 @@
 tgrep (PertGyp)
 ===============
 
+Written by Cole Brown (spydez).
 Designed for the 'reddit Backend Challenge'  (http://redd.it/fjgit).
 
 
@@ -28,7 +29,8 @@ The Disclaimer
     - Not as important, though tweaking helps reel in the seek/reads a lot. 
 - This is more Github Flavored Markdown than normal Markdown.
   - http://github.github.com/github-flavored-markdown/preview.html
-  - Well, right now it's just text because it has errors I'm leaving for now.
+  - Well, right now it's just text because it has Markdown errors 
+    I'm leaving for now.
 
 
 The Assumptions

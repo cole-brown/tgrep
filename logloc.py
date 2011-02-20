@@ -7,18 +7,10 @@
 # Gentlemen, set your window width to 120 characters. You have been warned.
 ###
 
-__author__     = "Cole Brown (spydez)"
-__copyright__  = "Copyright 2011"
-__credits__    = ["The reddit Backend Challenge (http://redd.it/fjgit)", "Cole Brown"]
-__license__    = "BSD-3"
-__version__    = "0.0.4" # //!
-__maintainer__ = "Cole Brown"
-__email__      = "git@spydez.com"
-__status__     = "Prototype" # "Prototype", "Development", or "Production" //! development?
 
-#----------------------------------------------------------------------------------------------------------------------
+#======================================================================================================================
 #                                                     LogLocation
-#----------------------------------------------------------------------------------------------------------------------
+#======================================================================================================================
 class LogLocation:
   """//! class description!"""
 
@@ -37,7 +29,6 @@ class LogLocation:
   INVALID           = (TOO_LOW, TOO_HIGH)
 
   def __init__(self, file_loc, datetime, min, max):
-    """bah blah"""
     self._file_loc  = file_loc
     self._timestamp = datetime
     self._relation_to_desired_min = min
@@ -80,14 +71,12 @@ class LogLocation:
     self._relation_to_desired_max = max
 
   def get_rel_to_min(self):
-    """relation to min"""
     return self._relation_to_desired_min
 
   def set_rel_to_min(self, rel):
     self._relation_to_desired_min = rel
 
   def get_rel_to_max(self):
-    """relation to max"""
     return self._relation_to_desired_max
 
   def set_rel_to_max(self, rel):

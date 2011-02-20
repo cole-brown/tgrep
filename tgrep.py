@@ -46,25 +46,17 @@ Options:
 
 
 todo = """
-comment code
-space out code?
-  - [X] tgrep
-  - [ ] logloc
-  - [ ] anomaly
-  - [ ] config-big
-  - [ ] extra
+backport updates to config-big to config
 
-backport updates to config-big
+EXPERIMENTAL const in config, use from now on for new features
 
 tgrep.py -> tgrep
 
 remove bad guesses const from config.
 
-make branch, remove debugs
+make branch, remove debugs on master
 
-remove header from logloc?
-
-comment other files?
+Turn off experimental?
 """
 
 

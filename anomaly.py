@@ -1,5 +1,9 @@
 
+# Exceptions used in PertGyp
 
+#======================================================================================================================
+#                                                   InvalidArgument
+#======================================================================================================================
 class InvalidArgument(Exception):
   """Exception raised for when a func was passed something it didn't like.
 
@@ -13,9 +17,12 @@ class InvalidArgument(Exception):
     self.arg = arg
 
   def __str__(self):
-    return "%s\arg: %s\n" % (self.msg, str(self.arg))
+    return "%s\narg: %s\n" % (self.msg, str(self.arg))
 
 
+#======================================================================================================================
+#                                                       NotFound
+#======================================================================================================================
 class NotFound(Exception):
   """Exception raised for when nothing is found in the log.
 
@@ -34,6 +41,9 @@ class NotFound(Exception):
     return "%s\ntimes: %s\nguesses: %s" % (self.msg, self.times, self.guesses)
 
 
+#======================================================================================================================
+#                                                       NotTime
+#======================================================================================================================
 class NotTime(Exception):
   """Exception raised when a string sent to arg_time_parse is not a time or time range.
 
@@ -50,6 +60,9 @@ class NotTime(Exception):
     return "%s\ninput string: %s" % (self.msg, self.input)
 
 
+#======================================================================================================================
+#                                                      RegexError
+#======================================================================================================================
 class RegexError(Exception):
   """Exception raised when something's wrong with a regex.
 
@@ -65,5 +78,5 @@ class RegexError(Exception):
     self.input = input
 
   def __str__(self):
-    return "%s\ninput string: %s\nregex string: 5s" % (self.msg, self.input, self.regex)
+    return "%s\ninput string: %s\nregex string: %s" % (self.msg, self.input, self.regex)
 
