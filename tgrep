@@ -25,7 +25,6 @@ Example:
      [log lines between 23:59:30 and 0:03:01]
 
 Options:
-  --version             show program's version number and exit
   -h, --help            show this help message and exit
   -b, --binary          use pure binary search instead of time-adjusted binary
                         search
@@ -48,11 +47,7 @@ Options:
 todo = """
 backport updates to config-big to config
 
-EXPERIMENTAL const in config, use from now on for new features
-
-tgrep.py -> tgrep
-
-remove bad guesses const from config.
+EXPERIMENTAL: use from now on for new features
 
 make branch, remove debugs on master
 
@@ -312,17 +307,22 @@ class LogSearch:
     self.boundaries = [LogLocation(0,             self.log_timestamps[0], LogLocation.TOO_LOW,  LogLocation.TOO_LOW),
                        LogLocation(self.filesize, too_high_time,          LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)]
 
+    # loop setup
     focus = 0 # where we'll jump to for the text search
     hits  = [] # any exact matches to min or max we happen upon along the way
     done = False
     is_min_guess = False # toggle
     bad_results = [0, 0]
+    MAX_BAD_RESULTS = 1 # max times search guess func can fail befare refocus is given a shot.
+    if config.EXPERIMENTAL:
+      MAX_BAD_RESULTS = 2 # One for normal fail, one for aggressive refocus fail. Regular refocus fail => done.
+
     # quickly search through file to get min/max guess as close as possible.
     while not done:
       for time in times: # requested region
         is_min_guess = not is_min_guess # toggle 
-        if bad_results[0 if is_min_guess else 1] > config.WIDE_SWEEP_MAX_RANGE_HITS:
-          if bad_results[1 if is_min_guess else 0] > config.WIDE_SWEEP_MAX_RANGE_HITS: # note the 0 & 1 swap
+        if bad_results[0 if is_min_guess else 1] > MAX_BAD_RESULTS:
+          if bad_results[1 if is_min_guess else 0] > MAX_BAD_RESULTS: # note the 0 & 1 swap
             # If we've gotten both wrong too much, give up.
             done = True
             break
@@ -1240,3 +1240,9 @@ if __name__ == '__main__':
       print >>writable, "[%s, %s]" % (str(stats.requested_times[0]), str(stats.requested_times[1]))
 
 # Fin
+
+
+# Local Variables: 
+# mode:python
+# fill-column:120
+# End: 

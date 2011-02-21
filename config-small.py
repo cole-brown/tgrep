@@ -1,7 +1,10 @@
-
-
+####
+###
+##
 # Don't delete stuff unless you want an error...
-
+##
+###
+####
 
 from extra import Configuration, Statistics
 
@@ -15,15 +18,10 @@ from extra import Configuration, Statistics
 #----------------------------------------------------------------------------------------------------------------------
 LOG_LINE_BYTES = 377
 A_GOOD_CHUNK_TO_READ = 4096 * 10 # bytes //! bump this up?
+CLOSE_ENOUGH = 8128 # bytes
 config = Configuration(
   # Path to log to default to if none is specified on the command line.
   DEFAULT_LOG = "loggen.log", # //! "/log/haproxy.log" 
-
-  # Used to estimate where in the log file a particular timestamp is.
-  AVG_LOG_SIZE = LOG_LINE_BYTES, # bytes. That's the size of the one line I got to see in the post, anyways. 
-  APPROX_MAX_LOGS_PER_SEC = 0.3, # //!1500
-  APPROX_MIN_LOGS_PER_SEC = 0, # //! 500
-  LOGS_PER_SEC_FUDGE_FACTOR = 1.2, # //! am I using any of these?
 
   # used to calculate a second's worth of bytes
   BYTES_PER_SECOND_FUDGE_FACTOR = 1.2, 
@@ -38,21 +36,21 @@ config = Configuration(
   LOG_TIMESTAMP_PARTS = 3, # "Feb", "13", "18:31:36"
 
   # If the time-adjusted binary search hits inside the region of desired logs, it's not much help. We need mins and
-  # maxes. This is how much to move the out by (out from the focus towards lower or upper bound).  seek loc to reel back
-  # the search.
-  REFOCUS_FACTOR = 0.75,
+  # maxes. This is how much to move the out by (out from the focus towards lower or upper bound). Closer to 0 makes the
+  # search faster & more aggressive, but too close makes wide sweep's time-adjusted binary search fail too fast and
+  # leaves too much of the log for edge sweep to chug through linearly.
+  REFOCUS_FACTOR = 0.15, # 15%
 
   # Maximum number of times to hit inside the range once time-adjusted binary search has gone into slower mode.
   # This will be applied independently to the upper and lower bounds of the search.
   WIDE_SWEEP_MAX_RANGE_HITS = 1,
 
   # The initial binary time-adjusted search will quit once it's either this close (in bytes) or stabalized.
-  WIDE_SWEEP_CLOSE_ENOUGH = 8128, # bytes. //! adjust to ~(1500-500)/2*log_size
+  WIDE_SWEEP_CLOSE_ENOUGH = CLOSE_ENOUGH, # bytes.
   
   # Amount (in bytes) of the file that the edge-finding algorithm will read in at a time. Higher /might/ give better
   # speed but will also use more memory.
   EDGE_SWEEP_CHUNK_SIZE = A_GOOD_CHUNK_TO_READ, # bytes
-  EDGE_SWEEP_PESSIMISM_FACTOR = 3, # curr * this > expected? Then we act all sad. //! used?
   
   # Amount (in bytes) of the file that will be read and printed at a time. Higher should give better speed but
   # will use more meory.
@@ -63,7 +61,8 @@ config = Configuration(
   #   1:2:3
   #   22:33
   #   23:33:11
-  #   23:33-23:33
+  #   23:33-23:33:1
+  #   23:33:1-23:33
   #   23:33:1-23:33:1
   #   23:33:11-23:33:11
   #
@@ -72,19 +71,18 @@ config = Configuration(
   #   23:33-23:33:
   #   23:33:-23:33:
   #   22:33:44:1
-  # TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})-?((?:\d{1,2}:){1,2}\d{1,2})?$', # old and busted
-  TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$', # new hotness
+  TIME_REGEX = r'^((?:\d{1,2}:){1,2}\d{1,2})(?:-((?:\d{1,2}:){1,2}\d{1,2}))?$',
   
   # Sometimes two different sections of a log will match a supplied time range. For example, the log file goes from Feb
   # 12 06:30 to Feb 13 07:00, and the user asks for logs with timestamp 6:50. That's in both the Feb 12 and Feb 13 parts
   # of the file. How do you want these seperated when they're printed out?
   DOUBLE_MATCH_SEP = '\n\n\n',
 
-  # Don't turn this on. Seriously... Unless you want to debug.
+  # Don't turn this on. Seriously... Unless you want to debug and all the debug prints are on your branch.
   DEBUG = True,
 
-  # Maximum size in bytes of mmap-able region.
-  MAX_MMAP_SIZE = 1 * 1024 * 1024 # 1 MB //! get page size in here  //! Ain't usin' this...
+  # May break tgrep. May make it go faster... May do nothing at all.
+  EXPERIMENTAL = True
 )
 
 
@@ -100,17 +98,17 @@ stats = Statistics(
   reads = 0, # total
   print_reads = 0, # print-only
   wide_sweep_loops = 0, # total
-  refocused_wide_sweep_loops = 0,
   edge_sweep_loops = 0,
   wide_sweep_time  = None,
   edge_sweep_time  = None,
   find_time  = None,
   print_time = None,
-  file_size = '0 bytes',
   print_size = 0, # bytes
-  edge_sweep_size = 0, # bytes
+  file_size = '0 bytes',
 
   # extra verbosity statistics
+  edge_sweep_size = 0, # bytes
+  refocused_wide_sweep_loops = 0,
   requested_times = [],
   wide_sweep_end_locs = [],
   final_locs = []

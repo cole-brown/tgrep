@@ -82,7 +82,7 @@ config = Configuration(
   DEBUG = True,
 
   # May break tgrep. May make it go faster... May do nothing at all.
-  EXPERIMENTAL = True,
+  EXPERIMENTAL = True
 )
 
 
