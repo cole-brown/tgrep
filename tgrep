@@ -39,20 +39,10 @@ Options:
                         --ee supercedes)
 """
 
+
 ###
 # Gentlemen, set your window width to 120 characters. You have been warned.
 ###
-
-
-todo = """
-backport updates to config-big to config
-
-EXPERIMENTAL: use from now on for new features
-
-make branch, remove debugs on master
-
-Turn off experimental?
-"""
 
 
 # Python imports
@@ -138,37 +128,37 @@ class LogSearch:
         DBG("first: %s" % self.log_timestamps[0]) # DEBUG
         DBG("last:  %s" % self.log_timestamps[1]) # DEBUG
      
-        # DEBUG - These are for loggen.log
-        # Feb 13 23:33 (whole minute)
-  #      all_times = [[datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]]
-        # Feb 13 23:33:11 (one log line)
-  #      all_times = [[datetime(2011, 2, 13, 23, 33, 11), datetime(2011, 2, 13, 23, 33, 11)]]
-        # Feb 14 07:07:39 (End of File, exactly one line)
-  #      all_times = [[datetime(2011, 2, 14, 7, 7, 39), datetime(2011, 2, 14, 7, 7, 39)]]
-        # Feb 14 07:07:39 (End of File, chunk)
-  #      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 7, 39)]]
-        # Feb 14 07:07:39 (End of File, chunk, no exact matches)
-  #      all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 9, 0)]]
-        # Feb 13 18:31:30 (Start of File, exactly one line)
-  #      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 31, 30)]]
-        # Feb 13 18:31:30 (Start of File, chunk)
-  #      all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]]
-        # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
-  #      all_times = [[datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]]
-        # NO MATCH!
-  #      all_times = [[datetime(2011, 2, 14, 1, 3, 0), datetime(2011, 2, 14, 1, 3, 0)]]
-        # NO MATCH Feb 13 18:31:30 (before Start of File)
-  #      all_times = [[datetime(2011, 2, 13, 4, 31, 30), datetime(2011, 2, 13, 17, 31, 30)]]
-     
         requested_times = self.input_time_parse(self.input_time, self.log_timestamps[0])
         stats.requested_times = requested_times
         DBG(requested_times) # DEBUG
      
-  #      DBG("at: %s" % all_times) # DEBUG
         # check times, get two ranges if twice in log file
         all_times = self.time_check(requested_times)
         DBG("at: %s" % all_times) # DEBUG
 
+        # DEBUG - These are for loggen.log
+        # Feb 13 23:33 (whole minute)
+#        all_times = [[datetime(2011, 2, 13, 23, 33, 00), datetime(2011, 2, 13, 23, 34, 00)]]
+        # Feb 13 23:33:11 (one log line)
+#        all_times = [[datetime(2011, 2, 13, 23, 33, 11), datetime(2011, 2, 13, 23, 33, 11)]]
+        # Feb 14 07:07:39 (End of File, exactly one line)
+#        all_times = [[datetime(2011, 2, 14, 7, 7, 39), datetime(2011, 2, 14, 7, 7, 39)]]
+        # Feb 14 07:07:39 (End of File, chunk)
+#        all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 7, 39)]]
+        # Feb 14 07:07:39 (End of File, chunk, no exact matches)
+#        all_times = [[datetime(2011, 2, 14, 7, 7, 0), datetime(2011, 2, 14, 7, 9, 0)]]
+        # Feb 13 18:31:30 (Start of File, exactly one line)
+#        all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 31, 30)]]
+        # Feb 13 18:31:30 (Start of File, chunk)
+#        all_times = [[datetime(2011, 2, 13, 18, 31, 30), datetime(2011, 2, 13, 18, 32, 0)]]
+        # Feb 13 18:30:30 (Start of File, chunk, no exact matches)
+#        all_times = [[datetime(2011, 2, 13, 18, 30, 30), datetime(2011, 2, 13, 18, 32, 5)]]
+        # NO MATCH!
+#        all_times = [[datetime(2011, 2, 14, 1, 3, 0), datetime(2011, 2, 14, 1, 3, 0)]]
+        # NO MATCH Feb 13 18:31:30 (before Start of File)
+#        all_times = [[datetime(2011, 2, 13, 4, 31, 30), datetime(2011, 2, 13, 17, 31, 30)]]
+        DBG("at: %s" % all_times) # DEBUG
+     
         if all_times == []:
           print >>sys.stderr, "No matches for requested time in file."
           print >>sys.stderr, "input:            %s"   % str(self.input_time)
@@ -310,12 +300,11 @@ class LogSearch:
     # loop setup
     focus = 0 # where we'll jump to for the text search
     hits  = [] # any exact matches to min or max we happen upon along the way
+    in_range = [] # [lowest, highest] in-range guesses
     done = False
     is_min_guess = False # toggle
     bad_results = [0, 0]
     MAX_BAD_RESULTS = 1 # max times search guess func can fail befare refocus is given a shot.
-    if config.EXPERIMENTAL:
-      MAX_BAD_RESULTS = 2 # One for normal fail, one for aggressive refocus fail. Regular refocus fail => done.
 
     # quickly search through file to get min/max guess as close as possible.
     while not done:
@@ -330,32 +319,35 @@ class LogSearch:
           continue
   
         stats.wide_sweep_loops += 1
-        if bad_results[0 if is_min_guess else 1]:
-          stats.refocused_wide_sweep_loops += 1
+
+        DBG("MIN!" if is_min_guess else "MAX!") # DEBUG
   
         # time_search_guess, probably. Maybe binary_search_guess.
         focus = search_func(time, is_min_guess)
-        DBG("focus: %10d" % focus) # DEBUG
+        DBG("focus:   %10d" % focus) # DEBUG
         if bad_results[0 if is_min_guess else 1]:
           focus = self.refocus(focus, is_min_guess)
-        DBG("focus: %10d" % focus) # DEBUG
-        DBG("binary: %d" % self.binary_search_guess(time, is_min_guess)) # DEBUG
-        DBG("time:   %d" % focus) # DEBUG
+          stats.refocused_wide_sweep_loops += 1
+          DBG("refocus: %10d" % focus) # DEBUG
+        DBG("binary:  %d" % self.binary_search_guess(time, is_min_guess)) # DEBUG
+        DBG("time:    %d" % focus) # DEBUG
   
         try:
-          # check focus for timestamp
-          result = self.pessimistic_forward_search(focus, times) 
-          good_result = self.update_guess(result) # updates self.boundaries in place
+          result = self.pessimistic_forward_search(focus, times) # check focus for timestamp
+          looking_for = self.LOOKING_FOR_MIN if is_min_guess else self.LOOKING_FOR_MAX
+          good_result = self.update_guess(result, looking_for) # updates self.boundaries in place
         except NotTime:
           # something went wrong... dunno what, but we couldn't parse a timestamp from that location.
           good_result = False
   
+        self.update_in_range(result, in_range)
+        DBG("in_range: %s" % in_range)
         if LogLocation.MATCH in result.get_minmax():
           DBG("found it!") # DEBUG
           hits.append(result)
   
         DBG(result) # DEBUG
-        DBG(good_result) # DEBUG
+        DBG("GOOD GUESS!" if good_result else "BAD GUESS!") # DEBUG
   
         if not good_result and is_min_guess:
           bad_results[0] += 1
@@ -367,7 +359,14 @@ class LogSearch:
         DBG(self.boundaries) # DEBUG
      
         # check if we can quit yet
-        if (self.boundaries[1].get_loc() - self.boundaries[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
+        if in_range != []:
+          # if min bound to min in_range is close enough, and the same for max, we're done.
+          if (self.boundaries[1].get_loc() - in_range[1].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH and \
+                (in_range[0].get_loc() - self.boundaries[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
+            DBG("close enough!") # DEBUG
+            done = True # exit while
+            break # exit for
+        elif (self.boundaries[1].get_loc() - self.boundaries[0].get_loc()) < config.WIDE_SWEEP_CLOSE_ENOUGH:
           DBG("close enough!") # DEBUG
           done = True # exit while
           break # exit for
@@ -426,7 +425,7 @@ class LogSearch:
             print "? ",  # DEBUG
           print result  # DEBUG
   
-        self.update_guess(result) # updates self.boundaries in place
+        self.update_guess(result, looking_for) # updates self.boundaries in place
         if result.get_is_min():
   #        DBG("found min! %s" % result.get_time()) # DEBUG
           # Found the lower boundry. Switch to looking for upper or neither, depending.
@@ -674,7 +673,7 @@ class LogSearch:
     Raises: 
       NotTime - parse_time had error parsing string into datetime
     """
-    print "seek_loc: %d %f" % (seek_loc, seek_loc)
+    DBG("seek_loc: %d %f" % (seek_loc, seek_loc)) # DEBUG
     self.log.seek(seek_loc)
     stats.seeks += 1
   
@@ -761,13 +760,13 @@ class LogSearch:
 
     # search linearly through the chunk
     while chunk_loc < end_loc:
-      DBG("%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc)) # DEBUG
+#      DBG("%d / %d" % (seek_loc + chunk_loc, seek_loc + end_loc)) # DEBUG
       try:
         # find the first bit of the line, e.g. "Feb 14 05:52:12 web0"
         # send to parse_time to get datetime
         time = self.parse_time(chunk[chunk_loc : chunk_loc + config.LOG_TIMESTAMP_SIZE])
-        DBG(time) # DEBUG
-        DBG(times) # DEBUG
+#        DBG(time) # DEBUG
+#        DBG(times) # DEBUG
   
         # start building result
         result.set_loc(seek_loc + chunk_loc)
@@ -775,26 +774,20 @@ class LogSearch:
   
         # compare to desired to see if it's a better max
         if time > times[1]:
-          DBG("time > max") # DEBUG
           result.set_minmax(LogLocation.TOO_HIGH, LogLocation.TOO_HIGH)
         elif time == times[1]:
-          DBG("time == max") # DEBUG
           # do nothing for now about this match, may optimize to save it off later.
           result.set_rel_to_max(LogLocation.MATCH)
         else: # time < times[1]
-          DBG("time < max") # DEBUG
           result.set_rel_to_max(LogLocation.TOO_LOW)
    
         # compare to desired to see if it's a better min
         if time < times[0]:
-          DBG("time < min") # DEBUG
           result.set_rel_to_min(LogLocation.TOO_LOW)
         elif time == times[0]:
-          DBG("time == min") # DEBUG
           # do nothing for now about this match, may optimize to save it off later.
           result.set_rel_to_min(LogLocation.MATCH)
         else: # time > times[0]
-          DBG("time > min") # DEBUG
           result.set_rel_to_min(LogLocation.TOO_HIGH)
   
         if (prev_minmax == LogLocation.OUT_OF_RANGE_LOW) and (result.get_minmax() == LogLocation.OUT_OF_RANGE_HIGH):
@@ -842,10 +835,10 @@ class LogSearch:
     ###
     # Edge Cases
     ###
-  
+
     # if we read to the end of our LOOKING_FOR_MAX chunk, and don't find the in range or match -> too high edge,
     # then the_guess max IS the boundry max.
-    if not result.get_is_boundry() and (looking_for == self.LOOKING_FOR_MAX) and (chunk_loc == end_loc):
+    if not result.get_is_boundry() and (looking_for == self.LOOKING_FOR_MAX) and (chunk_loc >= end_loc):
       result.set_loc(guess.get_loc())
       result.set_time(guess.get_time())
       result.set_minmax(guess.get_rel_to_min(), guess.get_rel_to_max())
@@ -897,13 +890,48 @@ class LogSearch:
       raise NotTime("Could not parse timestamp.", time_str)
   
   #--------------------------------------------------------------------------------------------------------------------
+  #                                                 update_in_range
+  #--------------------------------------------------------------------------------------------------------------------
+  def update_in_range(self, guess, range_hits):
+    """Updates the range_hits hits list based on the guess.
+  
+    Inputs:
+      guess      - A LogLocation that may or may not be better than the current guesses.
+  
+    Updates in place:
+      range_hits - List in form [min, max] of current widest in-range LogLocation entries. Could also be [] or [x], if
+                   there are zero or 1 in-range hits.
+  
+    Returns: 
+      Boolean - True if self.boundaries improved, otherwise False
+  
+    Raises:  Nothing
+    """
+    # if it's in range in any way...
+    if (guess.get_minmax() == LogLocation.IN_RANGE) or (guess.get_minmax() == LogLocation.MATCHES_MIN) or \
+        (guess.get_minmax() == LogLocation.MATCHES_MAX) or (guess.get_minmax() == LogLocation.EXACT_MATCH):
+
+      if range_hits == []:
+        range_hits.append(guess) # add to empty list
+        range_hits.append(guess) # add to empty list, again! It's the min /and/ the max! Yay.
+
+      elif guess.get_loc() < range_hits[0].get_loc():
+        # in range and less than previous low; update low
+        range_hits[0] = guess
+
+      elif guess.get_loc() > range_hits[1].get_loc():
+        # in range and more than previous high; update high
+        range_hits[1] = guess
+
+  #--------------------------------------------------------------------------------------------------------------------
   # update_guess: I like comments before my functions because I'm used to C++ and not to Python!~ Herp dedurp dedee.~
   #--------------------------------------------------------------------------------------------------------------------
-  def update_guess(self, guess):
+  def update_guess(self, guess, looking_for):
     """Updates the self.boundaries list based on the guess.
   
     Inputs:
       guess           - A LogLocation that may or may not be better than the current guesses.
+      looking_for     - self.LOOKING_FOR_BOTH, self.LOOKING_FOR_MIN, or self.LOOKING_FOR_MAX
   
     Updates in place:
       self.boundaries - List in form [min, max] of current best guesses (outter bounds) of LogLocation entries
@@ -927,13 +955,17 @@ class LogSearch:
       # Compare with min, replace if bigger
       if guess.get_loc() > self.boundaries[0].get_loc():
         self.boundaries[0] = guess
-        improved = True
+        # We got a better min, now... were they looking for the min?
+        if (looking_for == self.LOOKING_FOR_MIN) or (looking_for == self.LOOKING_FOR_BOTH):
+          improved = True
   
     elif guess.get_rel_to_max() == LogLocation.TOO_HIGH: # too far
       # Compare with max, replace if smaller
       if guess.get_loc() < self.boundaries[1].get_loc():
         self.boundaries[1] = guess
-        improved = True
+        # We got a better max, now... were they looking for the max?
+        if (looking_for == self.LOOKING_FOR_MAX) or (looking_for == self.LOOKING_FOR_BOTH):
+          improved = True
   
     return improved
   

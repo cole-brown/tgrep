@@ -38,7 +38,7 @@ class NotFound(Exception):
     self.guesses = guesses
 
   def __str__(self):
-    return "%s\ntimes: %s\nguesses: %s" % (self.msg, self.times, self.guesses)
+    return "%s\ntimes: %s\nguess(es): %s" % (self.msg, self.times, self.guesses)
 
 
 #======================================================================================================================

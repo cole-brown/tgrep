@@ -76,7 +76,7 @@ config = Configuration(
   # Sometimes two different sections of a log will match a supplied time range. For example, the log file goes from Feb
   # 12 06:30 to Feb 13 07:00, and the user asks for logs with timestamp 6:50. That's in both the Feb 12 and Feb 13 parts
   # of the file. How do you want these seperated when they're printed out?
-  DOUBLE_MATCH_SEP = '\n\n\n',
+  DOUBLE_MATCH_SEP = '\n\n\n', # use '' for no seperator
 
   # Don't turn this on. Seriously... Unless you want to debug and all the debug prints are on your branch.
   DEBUG = True,
