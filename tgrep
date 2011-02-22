@@ -201,8 +201,8 @@ class LogSearch:
           end = datetime.now()
           stats.print_time = end - start
           
-          if (len(all_times) > 1) and (config.DOUBLE_MATCH_SEP != ''):
-            print config.DOUBLE_MATCH_SEP
+          if (len(all_times) > 1) and (config.DOUBLE_MATCH_SEP != '') and (times == all_times[0]):
+            sys.stdout.write(config.DOUBLE_MATCH_SEP)
   
     # Beautify some errors, but keep it debug friendly.
     except NotTime as err:
@@ -305,6 +305,11 @@ class LogSearch:
     is_min_guess = False # toggle
     bad_results = [0, 0]
     MAX_BAD_RESULTS = 1 # max times search guess func can fail befare refocus is given a shot.
+    if config.EXPERIMENTAL:
+      # 0 -> 1 == time -> refoucsed time
+      # 1 -> 2 == refocused -> binary
+      # 2 -> 3 == done
+      MAX_BAD_RESULTS = 2 
 
     # quickly search through file to get min/max guess as close as possible.
     while not done:
@@ -325,10 +330,15 @@ class LogSearch:
         # time_search_guess, probably. Maybe binary_search_guess.
         focus = search_func(time, is_min_guess)
         DBG("focus:   %10d" % focus) # DEBUG
-        if bad_results[0 if is_min_guess else 1]:
+        if bad_results[0 if is_min_guess else 1] == 1:
           focus = self.refocus(focus, is_min_guess)
           stats.refocused_wide_sweep_loops += 1
           DBG("refocus: %10d" % focus) # DEBUG
+        elif config.EXPERIMENTAL and (bad_results[0 if is_min_guess else 1] == 2):
+          # Switch to binary search when refocused time search can't do any better.
+          # It helps sometimes...
+          focus = self.binary_search_guess(time, is_min_guess)
+          stats.binary_wide_sweep_loops +=1
         DBG("binary:  %d" % self.binary_search_guess(time, is_min_guess)) # DEBUG
         DBG("time:    %d" % focus) # DEBUG
   
@@ -353,6 +363,9 @@ class LogSearch:
           bad_results[0] += 1
         elif not good_result and not is_min_guess:
           bad_results[1] += 1
+
+        if config.EXPERIMENTAL and (search_func == self.binary_search_guess):
+          bad_results[0 if is_min_guess else 1] += 1 # don't bother doing a binary search pass if binary already failed
   
   #      DBG("bad low: %d" % bad_results[0] ) # DEBUG
   #      DBG("bad high: %d" % bad_results[1]) # DEBUG
@@ -1260,6 +1273,8 @@ if __name__ == '__main__':
 
   if options.super_verbose or options.super_verbose_error:
     print >>writable, "refocused wide sweep loops: %4d" % stats.refocused_wide_sweep_loops
+    if config.EXPERIMENTAL:
+      print >>writable, "binary wide sweep loops:    %4d" % stats.binary_wide_sweep_loops
     print >>writable, "edge sweep searched: %s" % pretty_size(stats.edge_sweep_size)
     print >>writable, "wide sweep locs: "
     print >>writable, stats.wide_sweep_end_locs
