@@ -17,11 +17,11 @@ from extra import Configuration, Statistics
 # config
 #----------------------------------------------------------------------------------------------------------------------
 LOG_LINE_BYTES = 377
-A_GOOD_CHUNK_TO_READ = 4096 * 10 # bytes //! bump this up?
+A_GOOD_CHUNK_TO_READ = 4096 * 10 # bytes 
 CLOSE_ENOUGH = 8128 # bytes
 config = Configuration(
   # Path to log to default to if none is specified on the command line.
-  DEFAULT_LOG = "loggen.log", # //! "/log/haproxy.log" 
+  DEFAULT_LOG = "loggen.log", 
 
   # used to calculate a second's worth of bytes
   BYTES_PER_SECOND_FUDGE_FACTOR = 1.2, 

@@ -7,15 +7,6 @@
 # Gentlemen, set your window width to 120 characters. You have been warned.
 ###
 
-__author__     = "Cole Brown (spydez)"
-__copyright__  = "Copyright 2011"
-__credits__    = ["The reddit Backend Challenge (http://redd.it/fjgit)", "Cole Brown"]
-__license__    = "BSD-3"
-__version__    = "0.0.4" # //!
-__maintainer__ = "Cole Brown"
-__email__      = "git@spydez.com"
-__status__     = "Prototype" # "Prototype", "Development", or "Production" //! development?
-
 
 # Python imports
 import os

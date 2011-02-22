@@ -17,11 +17,11 @@ from extra import Configuration, Statistics
 # config
 #----------------------------------------------------------------------------------------------------------------------
 LOG_LINE_BYTES = 500 # size of an average log line
-A_GOOD_CHUNK_TO_READ = 4096 * 50 # bytes (200 KB) //! bump this up?
+A_GOOD_CHUNK_TO_READ = 4096 * 50 # bytes (200 KB) 
 CLOSE_ENOUGH = 3000 * LOG_LINE_BYTES # bytes (within ~3000 log entries)
 config = Configuration(
   # Path to log to default to if none is specified on the command line.
-  DEFAULT_LOG = "biglog.log", # //! "/log/haproxy.log" 
+  DEFAULT_LOG = "/logs/haproxy.log" 
 
   # used to calculate a second's worth of bytes
   BYTES_PER_SECOND_FUDGE_FACTOR = 1.2, 
@@ -54,7 +54,7 @@ config = Configuration(
   
   # Amount (in bytes) of the file that will be read and printed at a time. Higher should give better speed but
   # will use more meory.
-  MAX_PRINT_CHUNK_SIZE = A_GOOD_CHUNK_TO_READ, # bytes 
+  MAX_PRINT_CHUNK_SIZE = 3*1024*1024, # bytes 
   
   # This is the regex for the acceptable input format for times. Don't fuck it up.
   # Good:
@@ -82,7 +82,7 @@ config = Configuration(
   DEBUG = False,
 
   # May break tgrep. May make it go faster... May do nothing at all.
-  EXPERIMENTAL = True
+  EXPERIMENTAL = False # Currently does nothing
 )
 
 

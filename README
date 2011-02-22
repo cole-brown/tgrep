@@ -96,7 +96,7 @@ hone down on...
     total time:       0:00:00.014851
     log file size:    3.6 MiB   
 
- - `./tgrep.py --ee -c config-big.py 15:49:50` on a 6.7 GiB file:
+ - `./tgrep --ee -c config-big.py 15:49:50` on a 6.7 GiB file:
      -- statistics --
     seeks:       14
     reads:       17 (total)
@@ -400,36 +400,40 @@ Possible Improvements
   sped up if tgrep was designed to fork and search for each region at the same
   time.
 
- - Patch HAProxy to spit out an index file of lines of timestamp with log file
-   location, like:
+- Provide ability to specify day in command arg (e.g. `tgrep "Feb 13 06:50"`)
+  so that tgrep won't search and find both 06:50 logs if 06:50 exists twice 
+  in the log.
 
-     Feb 12 07:06:43 42949672960
-     Feb 12 07:06:47 42949673123
-     Feb 12 07:07:00 42949673399
-     ...
+- Patch HAProxy to spit out an index file of lines of timestamp with log file
+  location, like:
 
-   Then have tgrep search that for the right parts of the log file to print out.
+    Feb 12 07:06:43 42949672960
+    Feb 12 07:06:47 42949673123
+    Feb 12 07:07:00 42949673399
+    ...
+
+  Then have tgrep search that for the right parts of the log file to print out.
 
 
 
 Usage and Options
 -----------------
 
-    Usage: tgrep.py times
-       Or: tgrep.py times [file]
-       Or: tgrep.py times [options] [file]
-       Or: tgrep.py [options] times [file]
-       Or: tgrep.py [options] [file] [options] times [options]
+    Usage: tgrep times
+       Or: tgrep times [file]
+       Or: tgrep times [options] [file]
+       Or: tgrep [options] times [file]
+       Or: tgrep [options] [file] [options] times [options]
        ...I don't really care; do whatever you want. Just gimme my times.
     
     Example:
-       $ tgrep.py 8:42:04
+       $ tgrep 8:42:04
          [log lines with that precise timestamp]
-       $ tgrep.py 10:01
+       $ tgrep 10:01
          [log lines with timestamps between 10:01:00 and 10:01:59]
-       $ tgrep.py 23:59-0:03
+       $ tgrep 23:59-0:03
          [log lines between 23:59:00 and 0:03:59]
-       $ tgrep.py 23:59:30-0:03:01
+       $ tgrep 23:59:30-0:03:01
          [log lines between 23:59:30 and 0:03:01
     
     Options:
@@ -452,7 +456,7 @@ To compare tgrep's time-adjusted binary search against a normal binary search,
 enable statistics with -v (for stdout) or -e (for stderr) and toggle the -b
 option.
 
-    $ ./tgrep.py 23:33:11 -e >/dev/null && ./tgrep.py 23:33:11 -e -b >/dev/null
+    $ ./tgrep 23:33:11 -e >/dev/null && ./tgrep 23:33:11 -e -b >/dev/null
     
      -- statistics --
     seeks:        5

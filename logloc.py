@@ -1,7 +1,6 @@
 #!/usr/bin/env python2.6
 #
 
-"""logloc: LogLocation class stores data related to locations/times in a log."""
 
 ###
 # Gentlemen, set your window width to 120 characters. You have been warned.
@@ -12,7 +11,7 @@
 #                                                     LogLocation
 #======================================================================================================================
 class LogLocation:
-  """//! class description!"""
+  """LogLocation class stores data related to locations/times in a log."""
 
   # for _relation_to_desired_min/max
   TOO_LOW  = -1
