@@ -6,6 +6,15 @@ Designed for the 'reddit Backend Challenge'  (http://redd.it/fjgit).
 
 
 
+The Short Version
+-----------------
+I passed the Backend Challenge, along with 15-30 others (~30 in total, but some
+of those did the Frontend Challenge), but royally botched the phone interview.
+
+Such is life.
+
+
+
 The License
 -----------
 
@@ -507,8 +516,4 @@ If you want statistics, run `tgrep -v <times> [log file]`
 If you want to play with config params, copy config.py and run
 `tgrep -c <new config> <times> [log file]`
 
-<div id="jedi-mind-trick">
-  Run `tgrep --ee <times> [log file] >/dev/null` and send to me...
-  (i.e., I only want the (extended) statistics.)
-</div>
-Nah, whatever. You're crazy busy.
+
